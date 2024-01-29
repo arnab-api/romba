@@ -427,7 +427,7 @@ def trace_important_window(
     return torch.stack(table)
 
 
-from src.data import Sample
+from src.data.dataclasses import Sample
 from src.functional import get_h, patch_repr, predict_next_token
 from src.models import ModelandTokenizer
 from src.utils.dataclasses import PredictedToken, ReprReplacementResults

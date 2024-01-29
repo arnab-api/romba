@@ -11,7 +11,7 @@ from transformers import AutoTokenizer
 
 import src.utils.tokenizer_utils as tokenizer_utils
 from mamba_minimal.model import Mamba
-from src.data import Relation
+from src.data.dataclasses import Relation
 from src.models import ModelandTokenizer
 from src.utils.dataclasses import PredictedToken
 
