@@ -9,11 +9,10 @@ import torch
 # from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as MambaLMHeadModel
 from transformers import AutoTokenizer
 
-import src.utils.tokenizer_utils as tokenizer_utils
 from mamba_minimal.model import Mamba
-from src.data.dataclasses import Relation
+from src import tokens as tokenization_utils
+from src.data.dataclasses import PredictedToken, Relation
 from src.models import ModelandTokenizer
-from src.utils.dataclasses import PredictedToken
 
 logger = logging.getLogger(__name__)
 
@@ -228,7 +227,7 @@ def predict_next_token(
         assert len(token_of_interest) == len(prompt)
         track_interesting_tokens = []
 
-    with tokenizer_utils.set_padding_side(mt.tokenizer, padding_side="left"):
+    with tokenization_utils.set_padding_side(mt.tokenizer, padding_side="left"):
         inputs = mt.tokenizer(prompt, return_tensors="pt", padding="longest").to(
             mt.device
         )
@@ -451,9 +450,11 @@ def get_h(
         mt.model(**tokenized)
 
     h = {
-        layer: untuple(traces[layer].output)[:, subject_end - 1].squeeze()
-        if mode == "output"
-        else untuple(traces[layer].input)[:, subject_end - 1].squeeze()
+        layer: (
+            untuple(traces[layer].output)[:, subject_end - 1].squeeze()
+            if mode == "output"
+            else untuple(traces[layer].input)[:, subject_end - 1].squeeze()
+        )
         for layer in layers
     }
     return h

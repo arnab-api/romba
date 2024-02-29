@@ -1,4 +1,5 @@
 """Some useful type aliases relevant to this project."""
+
 import pathlib
 from typing import Literal, Sequence
 
@@ -6,6 +7,13 @@ import numpy
 import torch
 import transformers
 import transformers.modeling_outputs
+
+from mamba_minimal.model import (
+    Mamba,
+)  # `mamba-simple`, easier to understand the do different interventions
+
+# from mamba.mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba # official implementation, superfast
+
 
 ArrayLike = list | tuple | numpy.ndarray | torch.Tensor
 PathLike = str | pathlib.Path
@@ -17,6 +25,7 @@ Model = (
     | transformers.GPTJForCausalLM
     | transformers.GPTNeoXForCausalLM
     | transformers.LlamaForCausalLM
+    | Mamba
 )
 Tokenizer = transformers.PreTrainedTokenizerFast
 TokenizerOffsetMapping = Sequence[tuple[int, int]]

@@ -1,7 +1,13 @@
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Iterator
 
+from dataclasses_json import DataClassJsonMixin
 from transformers import AutoTokenizer
+
+from src import functional
+from src.models import ModelandTokenizer
+from src.utils.typing import Tokenizer
 
 
 @contextmanager
@@ -26,3 +32,13 @@ def set_padding_side(
     tokenizer.padding_side = padding_side
     yield
     tokenizer.padding_side = _padding_side
+
+
+def maybe_prefix_eos(tokenizer: Tokenizer | ModelandTokenizer, prompt: str) -> str:
+    """Prefix prompt with EOS token if model has no special start token."""
+    tokenizer = functional.unwrap_tokenizer(tokenizer)
+    if hasattr(tokenizer, "eos_token"):
+        prefix = tokenizer.eos_token
+        if not prompt.startswith(prefix):
+            prompt = prefix + " " + prompt
+    return prompt

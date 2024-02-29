@@ -65,8 +65,10 @@ class ModelandTokenizer:
         self.model.eval()
         self.device = next(self.model.parameters()).device
 
-        self.parse_config() if isinstance(model, Mamba) else self.parse_config(
-            model.config
+        (
+            self.parse_config()
+            if isinstance(model, Mamba)
+            else self.parse_config(model.config)
         )
         self.cache_forwards()
 
@@ -135,9 +137,7 @@ class ModelandTokenizer:
         Caches the forward pass of all the modules.
         Usuful to reset the model to its original state after an overwrite.
         """
-        self._module_forwards: dict(
-            str,
-        ) = {}
+        self._module_forwards: dict[str] = {}
         for name, module in self.model.named_modules():
             if hasattr(module, "forward"):
                 self._module_forwards[name] = module.forward

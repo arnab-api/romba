@@ -427,10 +427,10 @@ def trace_important_window(
     return torch.stack(table)
 
 
-from src.data.dataclasses import Sample
-from src.functional import get_h, patch_repr, predict_next_token
-from src.models import ModelandTokenizer
-from src.utils.dataclasses import PredictedToken, ReprReplacementResults
+# from src.data.dataclasses import Sample
+# from src.functional import get_h, patch_repr, predict_next_token
+# from src.models import ModelandTokenizer
+# from src.utils.dataclasses import PredictedToken, ReprReplacementResults
 
 # def trace_with_patching_from_alt_subj(
 #     mt,
@@ -451,81 +451,81 @@ from src.utils.dataclasses import PredictedToken, ReprReplacementResults
 #     ), "Need to pass 2 inputs for the uncorrupted and corrupted runs"
 
 
-def patch_individual_layers_for_single_edit(
-    mt: ModelandTokenizer,
-    layers: list[int],
-    orig_sample: Sample,
-    edit_sample: Sample,
-    query: str,
-) -> ReprReplacementResults:
-    # TODO: Support for multiple edits
-    # ! Multiple edit acting weird. Could not find the bug.
+# def patch_individual_layers_for_single_edit(
+#     mt: ModelandTokenizer,
+#     layers: list[int],
+#     orig_sample: Sample,
+#     edit_sample: Sample,
+#     query: str,
+# ) -> ReprReplacementResults:
+#     # TODO: Support for multiple edits
+#     # ! Multiple edit acting weird. Could not find the bug.
 
-    if "{}" in query:
-        query = query.format(orig_sample.subject)
+#     if "{}" in query:
+#         query = query.format(orig_sample.subject)
 
-    edit_h = get_h(
-        mt=mt,
-        prompt=query.replace(orig_sample.subject, edit_sample.subject),
-        subject=edit_sample.subject,
-        layers=[mt.layer_name_format.format(layer_idx) for layer_idx in layers],
-    )
+#     edit_h = get_h(
+#         mt=mt,
+#         prompt=query.replace(orig_sample.subject, edit_sample.subject),
+#         subject=edit_sample.subject,
+#         layers=[mt.layer_name_format.format(layer_idx) for layer_idx in layers],
+#     )
 
-    tokenized = mt.tokenizer(
-        query, return_offsets_mapping=True, return_tensors="pt"
-    ).to(mt.device)
-    offset_mapping = tokenized.pop("offset_mapping")[0]
+#     tokenized = mt.tokenizer(
+#         query, return_offsets_mapping=True, return_tensors="pt"
+#     ).to(mt.device)
+#     offset_mapping = tokenized.pop("offset_mapping")[0]
 
-    subject_start, subject_end = find_token_range(
-        query,
-        orig_sample.subject,
-        tokenizer=mt.tokenizer,
-        offset_mapping=offset_mapping,
-    )
+#     subject_start, subject_end = find_token_range(
+#         query,
+#         orig_sample.subject,
+#         tokenizer=mt.tokenizer,
+#         offset_mapping=offset_mapping,
+#     )
 
-    subj_last_idx = subject_end - 1
-    edit_rank_after_patching: dict[int, tuple[int, PredictedToken]] = {}
-    predictions: dict[int, list[PredictedToken]] = {}
-    edit_token = mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx])
+#     subj_last_idx = subject_end - 1
+#     edit_rank_after_patching: dict[int, tuple[int, PredictedToken]] = {}
+#     predictions: dict[int, list[PredictedToken]] = {}
+#     edit_token = mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx])
 
-    logger.debug("=" * 100)
-    logger.debug(
-        f"({orig_sample.subject}, {orig_sample.object}) => ({edit_sample.subject}, {edit_sample.object}) | edit_idx={subj_last_idx}[{edit_token}]"
-    )
+#     logger.debug("=" * 100)
+#     logger.debug(
+#         f"({orig_sample.subject}, {orig_sample.object}) => ({edit_sample.subject}, {edit_sample.object}) | edit_idx={subj_last_idx}[{edit_token}]"
+#     )
 
-    for layer_idx in layers:
-        layer_name = mt.layer_name_format.format(layer_idx)
-        with baukit.Trace(
-            module=mt.model,
-            layer=layer_name,
-            edit_output=patch_repr(
-                patch_layer=layer_name,
-                patch_idx=subj_last_idx,
-                patch_vector=edit_h[layer_name],
-            ),
-        ):
-            preds, edit_answer_rank = predict_next_token(
-                mt=mt,
-                prompt=query,
-                token_of_interest=f" {edit_sample.object}"
-                if "llama" not in mt.model_name.lower()
-                else edit_sample.object,  # because LLaMA tokenizers handle spacing dynamically
-            )
-        predictions[layer_idx] = preds[0]
-        edit_rank_after_patching[layer_idx] = edit_answer_rank[0]
-        logger.debug(
-            f"Layer {layer_idx} => rank({edit_sample.object})={edit_answer_rank[0][0]} [{edit_answer_rank[0][1]}]  | preds={', '.join(str(p) for p in preds[0])}"
-        )
-    logger.debug("-" * 100)
+#     for layer_idx in layers:
+#         layer_name = mt.layer_name_format.format(layer_idx)
+#         with baukit.Trace(
+#             module=mt.model,
+#             layer=layer_name,
+#             edit_output=patch_repr(
+#                 patch_layer=layer_name,
+#                 patch_idx=subj_last_idx,
+#                 patch_vector=edit_h[layer_name],
+#             ),
+#         ):
+#             preds, edit_answer_rank = predict_next_token(
+#                 mt=mt,
+#                 prompt=query,
+#                 token_of_interest=f" {edit_sample.object}"
+#                 if "llama" not in mt.model_name.lower()
+#                 else edit_sample.object,  # because LLaMA tokenizers handle spacing dynamically
+#             )
+#         predictions[layer_idx] = preds[0]
+#         edit_rank_after_patching[layer_idx] = edit_answer_rank[0]
+#         logger.debug(
+#             f"Layer {layer_idx} => rank({edit_sample.object})={edit_answer_rank[0][0]} [{edit_answer_rank[0][1]}]  | preds={', '.join(str(p) for p in preds[0])}"
+#         )
+#     logger.debug("-" * 100)
 
-    return ReprReplacementResults(
-        source_QA=orig_sample,
-        edit_QA=edit_sample,
-        edit_index=subj_last_idx,
-        edit_token=mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx]),
-        predictions_after_patching=predictions,
-        rank_edit_ans_after_patching=edit_rank_after_patching,
-    )
+#     return ReprReplacementResults(
+#         source_QA=orig_sample,
+#         edit_QA=edit_sample,
+#         edit_index=subj_last_idx,
+#         edit_token=mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx]),
+#         predictions_after_patching=predictions,
+#         rank_edit_ans_after_patching=edit_rank_after_patching,
+#     )
 
 
 # def trace_with_repatch(
