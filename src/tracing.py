@@ -9,6 +9,7 @@ import torch
 
 # from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba
 from mamba_minimal.model import Mamba
+from src import models
 from src.functional import (
     decode_tokens,
     find_token_range,
@@ -59,9 +60,12 @@ def trace_with_patch(
     any number of token indices and layers can be listed.
     """
     if mamba_block_hook is not None:
-        assert isinstance(
-            mt.model, Mamba
+        assert models.is_mamba_variant(
+            mt
         ), "if `mamba_block_hook` is not None, the model should be a Mamba"
+        assert models.is_mamba_fast(
+            mt
+        ), "this implementation isn't compatible with the official implementation"
         assert mamba_block_hook in get_args(
             MambaBlock_Hook_Points
         ), f"Not a valid MambaBock hook `{mamba_block_hook=}`"
