@@ -14,6 +14,9 @@ from src.utils.typing import Mamba
 logger = logging.getLogger(__name__)
 
 
+CACHEABLE_FUNCS = ["forward", "ssm", "selective_scan"]
+
+
 class ModelandTokenizer:
     def __init__(
         self,
@@ -134,16 +137,19 @@ class ModelandTokenizer:
         """
         self._module_forwards: dict = {}
         for name, module in self.model.named_modules():
-            if hasattr(module, "forward"):
-                self._module_forwards[name] = module.forward
+            self._module_forwards[name] = {}
+            for func_name in CACHEABLE_FUNCS:
+                if hasattr(module, func_name):
+                    self._module_forwards[name][func_name] = getattr(module, func_name)
 
     def reset_forward(self) -> None:
         """
         Resets the forward pass of all the modules to their original state.
         """
         for name, module in self.model.named_modules():
-            if hasattr(module, "forward"):
-                module.forward = self._module_forwards[name]
+            for func_name in CACHEABLE_FUNCS:
+                if hasattr(module, func_name):
+                    setattr(module, func_name, self._module_forwards[name][func_name])
 
     def __call__(self, *args, **kwargs) -> Any:
         """Call the model."""
@@ -294,6 +300,8 @@ def is_llama_variant(mt: Model | ModelandTokenizer) -> bool:
 def is_mamba_variant(mt: Model | ModelandTokenizer) -> bool:
     """Determine if model/tokenizer is GPT variant."""
     if isinstance(mt, ModelandTokenizer):
+        if "mamba" in mt.name.lower():
+            return True
         mt = unwrap_model(mt)
     return isinstance(mt, Mamba)
 

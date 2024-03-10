@@ -16,6 +16,8 @@ from src.functional import (
     make_inputs,
     predict_from_input,
 )
+import src.tokens as tokenization_utils
+
 from src.hooking.mamba import MambaBlock_Hook_Points, MambaBlockForwardPatcher
 from src.models import ModelandTokenizer
 
@@ -63,8 +65,8 @@ def trace_with_patch(
         assert models.is_mamba_variant(
             mt
         ), "if `mamba_block_hook` is not None, the model should be a Mamba"
-        assert models.is_mamba_fast(
-            mt
+        assert (
+            models.is_mamba_fast(mt) == False
         ), "this implementation isn't compatible with the official implementation"
         assert mamba_block_hook in get_args(
             MambaBlock_Hook_Points
@@ -192,9 +194,6 @@ def trace_with_patch(
     return probs
 
 
-from src.utils import tokenizer_utils
-
-
 def replace_eos_with_pad(tokenizer, token_list, pad_token="[PAD]"):
     if hasattr(tokenizer, "eos_token") == False:
         return token_list
@@ -253,7 +252,7 @@ def calculate_hidden_flow(
             prompt = prompt.format(subject)
         clean_prompt = prompt
         to_be_patched_prompt = prompt.replace(subject, alt_subject)
-        with tokenizer_utils.set_padding_side(mt.tokenizer, padding_side="left"):
+        with tokenization_utils.set_padding_side(mt.tokenizer, padding_side="left"):
             inp = mt.tokenizer(
                 [clean_prompt, to_be_patched_prompt],
                 return_tensors="pt",

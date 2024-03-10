@@ -250,12 +250,11 @@ def predict_next_token(
             batch_inputs = {
                 "input_ids": inputs.input_ids[i : i + batch_size],
             }
-            if isinstance(mt.model, Mamba) == False:
-                batch_inputs["attention_mask"] = inputs.attention_mask[
-                    i : i + batch_size
-                ]
+            batch_inputs["attention_mask"] = inputs.attention_mask[i : i + batch_size]
 
-            batch_outputs = mt.model(**batch_inputs)
+            print(">>> input_ids.shape=", batch_inputs["input_ids"].shape, "<<<")
+
+            batch_outputs = mt(**batch_inputs)
             logits = (
                 batch_outputs.logits[:, -1]
                 if hasattr(batch_outputs, "logits")
