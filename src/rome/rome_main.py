@@ -6,8 +6,9 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src.models import ModelandTokenizer
 from src.rome_utils import nethook
-from src.rome_utils.generate import generate_fast
+from src.utils.generation import generate_fast
 
 from .compute_u import compute_u
 from .compute_v import compute_v
@@ -210,7 +211,9 @@ def upd_matrix_match_shape(matrix: torch.Tensor, shape: torch.Size) -> torch.Ten
         )
 
 
-def get_context_templates(model, tok, length_params):
+def get_context_templates(
+    mt: ModelandTokenizer, length_params: list[tuple]
+) -> list[str]:
     global CONTEXT_TEMPLATES_CACHE
 
     if CONTEXT_TEMPLATES_CACHE is None:
@@ -219,9 +222,8 @@ def get_context_templates(model, tok, length_params):
             for x in sum(
                 (
                     generate_fast(
-                        model,
-                        tok,
-                        ["<|endoftext|>"],
+                        mt=mt,
+                        prompts=["<|endoftext|>"],
                         n_gen_per_prompt=n_gen,
                         max_out_len=length,
                     )

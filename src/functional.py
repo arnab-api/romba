@@ -1,6 +1,7 @@
 import copy
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Optional, Union
 
@@ -469,99 +470,3 @@ def get_h(
         for layer in layers
     }
     return h
-
-
-@dataclass
-class EditConfig:
-    layers: list[Layer]
-    intervention: Callable
-
-
-@dataclass
-class GenerationResult:
-    generation: str | list[str]
-    logits: torch.Tensor
-    immidiate_next_token: list[PredictedToken]
-
-
-# custom generate function for mamba
-@torch.inference_mode()
-def mamba_generate(
-    mt: ModelandTokenizer,
-    prompt: Optional[list[str] | str] = None,
-    input_ids: Optional[torch.Tensor] = None,
-    max_new_tokens: int = 10,
-    topk: int = 5,
-    edit_config: Optional[EditConfig] = None,
-) -> GenerationResult:
-    assert prompt is not None or input_ids is not None
-    if isinstance(prompt, str):
-        prompt = [prompt]
-    if input_ids is None:
-        with tokenization_utils.set_padding_side(mt.tokenizer, padding_side="left"):
-            input_ids = (
-                mt.tokenizer(prompt, return_tensors="pt", padding="longest")
-                .to(models.determine_device(mt))
-                .input_ids
-            )
-
-    predicted_tokens: list[PredictedToken] = []
-    model_logits: torch.Tensor | None = None
-    generated_tokens: list[list[int]] = [[] for _ in range(len(input_ids))]
-
-    for i in range(max_new_tokens):
-        if i == 0 and edit_config is not None:
-            with baukit.Trace(
-                module=mt.model,
-                layer=edit_config.layers[0],
-                edit_output=edit_config.intervention,
-            ):
-                outputs = mt(input_ids=input_ids)
-        else:
-            outputs = mt(input_ids=input_ids)
-
-        logits = (
-            outputs.logits[:, -1, :]
-            if hasattr(outputs, "logits")
-            else outputs[:, -1, :]
-        )
-
-        next_token_probs = logits.float().softmax(dim=-1)
-        next_topk = logits.topk(dim=-1, k=topk)
-        next_token_probs_filtered_topk = next_topk.values.float().softmax(dim=-1)
-
-        if i == 0:
-            # save the logits and predicted tokens for the immidiate next token
-            model_logits = logits[0].clone().cpu()
-            for token_id in next_topk.indices[0]:
-                predicted_tokens.append(
-                    PredictedToken(
-                        token=mt.tokenizer.decode(token_id),
-                        prob=next_token_probs[0, token_id].item(),
-                    )
-                )
-
-        # sample the next token
-        next_token = torch.multinomial(next_token_probs_filtered_topk, num_samples=1)
-        next_token = next_topk.indices.gather(dim=-1, index=next_token)
-
-        for j in range(len(input_ids)):
-            generated_tokens[j].append(next_token[j].item())
-
-        # update the input_ids
-        input_ids = torch.cat([input_ids, next_token], dim=-1)
-
-    generated_tokens = mt.tokenizer.batch_decode(generated_tokens)
-
-    return GenerationResult(
-        generation=[
-            (
-                "".join(generated_tokens)
-                if isinstance(cur_generation, list)
-                else cur_generation
-            )
-            for cur_generation in generated_tokens
-        ],
-        immidiate_next_token=predicted_tokens,
-        logits=model_logits,
-    )

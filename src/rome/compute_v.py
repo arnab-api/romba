@@ -110,7 +110,7 @@ def compute_v(
             module=model,
             layers=[
                 hparams.layer_module_tmp.format(loss_layer),
-                hparams.mlp_module_tmp.format(layer),
+                hparams.rewrite_module_tmp.format(layer),
             ],
             retain_input=False,
             retain_output=True,
@@ -177,6 +177,8 @@ def compute_v(
 
     return target
 
+    # ! This is not supposed to be commented out - apply ROME wont work
+    # TODO(arnab): refactor this part out of compute_v.
     # # Retrieve cur_input, the current input to the 2nd MLP layer, and
     # # cur_output, the original output of the 2nd MLP layer.
     # cur_input, cur_output = get_module_input_output_at_word(

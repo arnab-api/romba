@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from datasets import load_dataset
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src import models
 from src.rome_utils.nethook import Trace, set_requires_grad
 from src.rome_utils.runningstats import (
     CombinedStat,
@@ -14,7 +16,10 @@ from src.rome_utils.runningstats import (
     SecondMoment,
     tally,
 )
+from src.utils import logging_utils
 from src.utils.globals import *
+
+logger = logging.getLogger(__name__)
 
 from .tok_dataset import (
     TokenizedDataset,
@@ -41,7 +46,11 @@ def main():
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
 
-    aa("--model_name", default="gpt2-xl", choices=["gpt2-xl", "EleutherAI/gpt-j-6B"])
+    aa(
+        "--model_name",
+        default="gpt2-xl",
+        choices=["gpt2-xl", "EleutherAI/gpt-j-6B", "state-spaces/mamba-2.8b-slimpj"],
+    )
     aa("--dataset", default="wikipedia", choices=["wikitext", "wikipedia"])
     aa("--layers", default=[17], type=lambda x: list(map(int, x.split(","))))
     aa("--to_collect", default=["mom2"], type=lambda x: x.split(","))
@@ -52,9 +61,14 @@ def main():
     aa("--download", default=1, type=int, choices=[0, 1])
     args = parser.parse_args()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModelForCausalLM.from_pretrained(args.model_name).eval().cuda()
-    set_requires_grad(False, model)
+    logging_utils.configure(args)
+    logger.info(args)
+
+    mt = models.ModelandTokenizer(
+        model_path=args.model_name,
+        torch_dtype=torch.float32,
+    )
+    set_requires_grad(False, mt.model)
 
     for layer_num in args.layers:
         print(
@@ -63,12 +77,18 @@ def main():
             "Note, the statistics are collected over the inputs to the second MLP layer, "
             "or equivalently the outputs of the first MLP layer."
         )
-        proj_layer_name = "c_proj" if "gpt2" in args.model_name else "fc_out"
-        layer_name = f"transformer.h.{layer_num}.mlp.{proj_layer_name}"
+
+        if models.is_mamba_variant(mt):
+            # TODO(arnab): This will change for different hooks inside the MambaBlock
+            layer_name = mt.layer_name_format.format(layer_num) + ".mixer.out_proj"
+        else:
+            proj_layer_name = "c_proj" if "gpt2" in mt.name.lower() else "fc_out"
+            layer_name = (
+                mt.mlp_module_name_format.format(layer_num) + f".{proj_layer_name}"
+            )
 
         layer_stats(
-            model,
-            tokenizer,
+            mt,
             layer_name,
             args.stats_dir,
             args.dataset,
@@ -81,13 +101,11 @@ def main():
 
 
 def layer_stats(
-    model,
-    tokenizer,
-    layer_name,
-    stats_dir,
+    mt: models.ModelandTokenizer,
+    layer_name: str,
+    stats_dir: str,
     ds_name,
     to_collect,
-    model_name=None,
     sample_size=None,
     precision=None,
     batch_tokens=None,
@@ -102,16 +120,17 @@ def layer_stats(
     def get_ds():
         raw_ds = load_dataset(
             ds_name,
-            dict(wikitext="wikitext-103-raw-v1", wikipedia="20200501.en")[ds_name],
+            dict(wikitext="wikitext-103-raw-v1", wikipedia="20220301.en")[ds_name],
         )
-        maxlen = model.config.n_positions
+        maxlen = model.config.n_positions if hasattr(model, "config") else 2048
         if batch_tokens is not None and batch_tokens < maxlen:
             maxlen = batch_tokens
         return TokenizedDataset(raw_ds["train"], tokenizer, maxlen=maxlen)
 
+    model, tokenizer = mt.model, mt.tokenizer
     # Continue with computation of statistics
     batch_size = 100  # Examine this many dataset texts at once
-    npos = model.config.n_positions
+    npos = model.config.n_positions if hasattr(model, "config") else 2048
     if batch_tokens is None:
         batch_tokens = npos * 3  # Sort and divide into batches with this many tokens
     if precision is None:
@@ -120,8 +139,8 @@ def layer_stats(
     size_suffix = "" if sample_size is None else f"_{sample_size}"
     if batch_tokens < npos:
         size_suffix = "_t{batch_tokens}" + size_suffix
-    if model_name is None:
-        model_name = model.config._name_or_path.replace("/", "_")
+
+    model_name = mt.name.lower().replace("/", "_")
 
     stats_dir = Path(stats_dir)
     file_extension = f"{model_name}/{ds_name}_stats/{layer_name}_{precision}_{'-'.join(sorted(to_collect))}{size_suffix}.npz"
@@ -161,10 +180,12 @@ def layer_stats(
         for batch_group in progress(loader, total=batch_count):
             for batch in batch_group:
                 batch = dict_to_(batch, "cuda")
+                # TODO(arnab): Will not be so straight-forward for different hooks inside the MambaBlock
+                # Will only work for an explicit Module.
                 with Trace(
                     model, layer_name, retain_input=True, retain_output=False, stop=True
                 ) as tr:
-                    model(**batch)
+                    mt(**batch)
                 feats = flatten_masked_batch(tr.input, batch["attention_mask"])
                 # feats = flatten_masked_batch(tr.output, batch["attention_mask"])
                 feats = feats.to(dtype=dtype)

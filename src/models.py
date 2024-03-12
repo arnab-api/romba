@@ -1,6 +1,6 @@
 import logging
-import re
-from typing import Any, Callable, Literal, Optional, overload
+from dataclasses import dataclass, field
+from typing import Any, Literal, Optional, overload
 
 import baukit
 import torch
@@ -25,7 +25,7 @@ class ModelandTokenizer:
         model_path: Optional[
             str
         ] = "EleutherAI/gpt-j-6B",  # if model is provided, this will be ignored and rewritten
-        torch_dtype=torch.float16,
+        torch_dtype=torch.float32,
     ) -> None:
         assert (
             model is not None or model_path is not None
@@ -162,32 +162,6 @@ class ModelandTokenizer:
                 if k.startswith("input") == False:
                     kwargs.pop(k)
         return self.model(*args, **kwargs)
-
-
-# class FinalLayerNorm(torch.nn.Module):
-#     def __init__(self, ln_f: torch.nn.Module, mamba: bool = False):
-#         super().__init__()
-#         self.ln_f = ln_f
-#         self.mamba = mamba
-
-#     def forward(self, x: torch.Tensor, residual=Optional[torch.Tensor]):
-#         if self.mamba == False:
-#             return self.ln_f(untuple(x))
-#         else:
-#             if residual is None:
-#                 try:
-#                     x, residual = x
-#                 except:
-#                     raise ValueError("x must be a tuple of (x, residual)")
-#             return rms_norm_fn(
-#                 x=x,
-#                 weight=self.ln_f.weight,
-#                 bias=self.ln_f.bias,
-#                 eps=self.ln_f.eps,
-#                 residual=residual,
-#                 prenorm=False,
-#                 residual_in_fp32=self.ln_f.weight.dtype == torch.float32,
-#             )
 
 
 class LMHead(torch.nn.Module):
