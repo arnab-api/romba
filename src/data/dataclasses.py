@@ -99,7 +99,7 @@ class CounterFactDataset(Dataset, DataClassJsonMixin):
             for sample in json_file[:size]
         ]
 
-        logging.info(f"Loaded dataset with {len(self)} elements")
+        logging.info(f"Loaded CounterFact dataset with {len(self)} elements")
 
     def __len__(self):
         return len(self.data)

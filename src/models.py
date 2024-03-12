@@ -84,12 +84,15 @@ class ModelandTokenizer:
         if (
             is_mamba_variant(self.model) or "mamba" in self.name.lower()
         ):  # Not a Transformer
-            fields["n_layer"] = len(self.model.layers)
-            fields["n_embd"] = self.model.embedding.weight.shape[-1]
-            fields["layer_name_format"] = "layers.{}"
-            fields["embedder_name"] = "embedding"
-            fields["final_layer_norm_name"] = "norm_f"
-            fields["lm_head_name"] = "lm_head"
+            fields["n_layer"] = len(determine_layers(self.model))
+            fields["n_embd"] = determine_hidden_size(self.model)
+            prefix = "backbone." if hasattr(self.model, "backbone") else ""
+            fields["layer_name_format"] = prefix + "layers.{}"
+            fields["embedder_name"] = determine_embedding_layer_path(self.model)
+            fields["final_layer_norm_name"] = determine_final_layer_norm_path(
+                self.model
+            )
+            fields["lm_head_name"] = determine_lm_head_path(self.model)
         else:
             fields["attn_module_name_format"] = None
             fields["mlp_module_name_format"] = None

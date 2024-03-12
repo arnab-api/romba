@@ -8,11 +8,11 @@ import torch
 import transformers
 import transformers.modeling_outputs
 
-from mamba_minimal.model import (
-    Mamba,
-)  # `mamba-simple`, easier to understand the do different interventions
+# `mamba-simple`, easier to understand the do different interventions
+from mamba_minimal.model import Mamba
 
-# from mamba.mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba # official implementation, superfast
+# official implementation, superfast
+# from mamba.mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba
 
 
 ArrayLike = list | tuple | numpy.ndarray | torch.Tensor

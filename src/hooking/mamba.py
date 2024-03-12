@@ -136,6 +136,10 @@ def MambaBlockForwardPatcher(
 from einops import einsum
 
 
+# ! just ablating the diagonal ssm isn't enough.
+# TODO: figure out how to ablate the shift-SSM or the conv as well
+# also, the "attention" visualization is wrong, because it doesn't take the Conv into account
+# technically, ssm doesn't pay attention on a particular token, it pays attention to the entire receptive field
 def selective_scan_with_mask(
     self, u, delta, A, B, C, D, mask=None, retainer=None, mask_policy="subtract"
 ):
@@ -221,8 +225,8 @@ def selective_scan_with_mask(
                 )
                 delta_B_src = deltaB_u[:, src_idx]
 
-                print(f"{delta_A_src_to_target.shape=}")
-                print(f"{delta_B_src.shape=}")
+                # print(f"{delta_A_src_to_target.shape=}")
+                # print(f"{delta_B_src.shape=}")
 
                 delta_AB_src = delta_A_src_to_target * delta_B_src
 
@@ -237,9 +241,9 @@ def selective_scan_with_mask(
                 if retainer != None:
                     retainer[target_idx][src_idx] = retention_from_src_to_target
                 if mask_policy == "subtract":
-                    print(
-                        f"subtracting {src_idx=} from {target_idx=} >> {retention_from_src_to_target.norm()}"
-                    )
+                    # print(
+                    #     f"subtracting {src_idx=} from {target_idx=} >> {retention_from_src_to_target.norm()}"
+                    # )
                     y[:, target_idx] -= retention_from_src_to_target
 
     # print(y)
@@ -249,7 +253,7 @@ def selective_scan_with_mask(
     if mask is not None:
         for target_idx in range(l):
             print(
-                f"{y[:, target_idx].norm()=} | IS IT ZERO: {torch.allclose(y[:, target_idx], torch.zeros_like(y[:, target_idx]), atol=1e-3)} | {y[:, target_idx].max()=} | {y[:, target_idx].min()=}"
+                f"||y_{target_idx}|| = {y[:, target_idx].norm().item()} | IS IT ZERO: {torch.allclose(y[:, target_idx], torch.zeros_like(y[:, target_idx]), atol=1e-3)} | max = {y[:, target_idx].max().item()} | min = {y[:, target_idx].min().item()}"
             )
         print("-------------------------------------")
 

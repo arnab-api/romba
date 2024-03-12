@@ -252,7 +252,7 @@ def predict_next_token(
             }
             batch_inputs["attention_mask"] = inputs.attention_mask[i : i + batch_size]
 
-            print(">>> input_ids.shape=", batch_inputs["input_ids"].shape, "<<<")
+            # print(">>> input_ids.shape=", batch_inputs["input_ids"].shape, "<<<")
 
             batch_outputs = mt(**batch_inputs)
             logits = (
