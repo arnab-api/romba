@@ -11,8 +11,8 @@ import torch.utils.data
 from dataclasses_json import DataClassJsonMixin
 from torch.utils.data import Dataset
 
+from src.globals import *
 from src.utils import env_utils
-from src.utils.globals import *
 from src.utils.typing import PathLike
 
 logger = logging.getLogger(__name__)

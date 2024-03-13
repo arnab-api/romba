@@ -7,7 +7,7 @@ import baukit
 import torch
 
 import src.tokens as tokenization_utils
-from src import models
+from src import functional, models
 from src.data.dataclasses import PredictedToken, Relation
 from src.utils.typing import Layer
 
@@ -101,7 +101,7 @@ def mamba_generate(
         .replace("<|endoftext|>", "")
         for x in txt
     ]
-
+    functional.free_gpu_cache()
     return txt
 
 
@@ -130,6 +130,7 @@ def generate_one_by_one(
         .replace("<|endoftext|>", "")
         for x in txt
     ]
+    functional.free_gpu_cache()
     return txt
 
 
@@ -224,11 +225,12 @@ def transformer_generate(
         .replace("<|endoftext|>", "")
         for x in txt
     ]
-
+    functional.free_gpu_cache()
     return txt
 
 
 def generate_fast(mt: models.ModelandTokenizer, **kwargs) -> list[str]:
+    functional.free_gpu_cache()
     if models.is_mamba_variant(mt.model):
         return mamba_generate(mt, **kwargs)
     else:

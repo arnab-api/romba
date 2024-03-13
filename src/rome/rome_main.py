@@ -80,7 +80,7 @@ def restore_weights(model, weights_to_restore):
     logger.info(f"restored weights of modules {list(weights_to_restore.keys())}.")
 
 
-def save_original_weights(model, modules):
+def save_weights(model, modules):
     module_weights = {}
     for module_name in modules:
         module = nethook.get_module(model, module_name)
@@ -106,7 +106,7 @@ def apply_rome_to_model(
         rewritten_modules = [
             hparams.rewrite_module_tmp.format(layer) for layer in hparams.layers
         ]
-        weights_copy = save_original_weights(mt.model, rewritten_modules)
+        weights_copy = save_weights(mt.model, rewritten_modules)
 
     for request in requests:
         deltas = get_kv_deltas(mt, request, hparams, cache_template)
@@ -248,6 +248,7 @@ def get_kv_deltas(
     #         v[...] = weights_copy[k]
 
     logger.info(f"Deltas successfully computed for {weight_name}")
+    free_gpu_cache()
 
     return deltas
 

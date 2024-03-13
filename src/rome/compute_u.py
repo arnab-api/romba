@@ -5,9 +5,9 @@ from typing import Dict, List
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src.globals import *
 from src.models import ModelandTokenizer
 from src.rome import repr_tools
-from src.utils.globals import *
 
 from .layer_stats import layer_stats
 from .rome_hparams import ROMEHyperParams

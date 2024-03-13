@@ -1,4 +1,5 @@
 """Utilities to make using python logging module easier."""
+
 import argparse
 import logging
 import sys
@@ -28,7 +29,7 @@ def configure(args: Optional[argparse.Namespace] = None, **kwargs: Any) -> None:
 def add_logging_args(parser: argparse.ArgumentParser) -> None:
     """Add --verbose (-v) and --quiet (-q) args to the parser."""
     parser.add_argument(
-        "--verbose",
+        # "--verbose",
         "-v",
         action="store_const",
         dest="log_level",

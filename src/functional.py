@@ -480,6 +480,6 @@ def free_gpu_cache():
     after = torch.cuda.memory_allocated()
     freed = before - after
 
-    logger.debug(
-        f"freed {models.bytes_to_human_readable(freed)} | before={models.bytes_to_human_readable(before)} -> after={models.bytes_to_human_readable(after)}"
-    )
+    # logger.debug(
+    #     f"freed {models.bytes_to_human_readable(freed)} | before={models.bytes_to_human_readable(before)} -> after={models.bytes_to_human_readable(after)}"
+    # )

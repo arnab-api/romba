@@ -1,13 +1,14 @@
 ---
-  # Result files
-  RESULTS_DIR: "results"
+# Result files
+RESULTS_DIR: "results"
 
-  # Data files
-  DATA_DIR: "data"
-  STATS_DIR: "data/stats"
+# Data files
+DATA_DIR: "data"
+STATS_DIR: "data/stats"
+KV_DIR: "results/cached_kvs"
 
-  # Hyperparameters
-  HPARAMS_DIR: "hparams"
+# Hyperparameters
+HPARAMS_DIR: "hparams"
 
-  # Remote URLs
-  REMOTE_ROOT_URL: "https://rome.baulab.info"
+# Remote URLs
+REMOTE_ROOT_URL: "https://memit.baulab.info"

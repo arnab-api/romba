@@ -8,6 +8,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src import models
+from src.globals import *
 from src.rome_utils.nethook import Trace, set_requires_grad
 from src.rome_utils.runningstats import (
     CombinedStat,
@@ -17,7 +18,6 @@ from src.rome_utils.runningstats import (
     tally,
 )
 from src.utils import logging_utils
-from src.utils.globals import *
 
 logger = logging.getLogger(__name__)
 
