@@ -127,6 +127,9 @@ def layer_stats(
             maxlen = batch_tokens
         return TokenizedDataset(raw_ds["train"], tokenizer, maxlen=maxlen)
 
+    project_root = Path(__file__).parent.parent.parent
+    stats_dir = os.path.join(project_root, stats_dir)
+
     model, tokenizer = mt.model, mt.tokenizer
     # Continue with computation of statistics
     batch_size = 100  # Examine this many dataset texts at once
@@ -146,17 +149,20 @@ def layer_stats(
     file_extension = f"{model_name}/{ds_name}_stats/{layer_name}_{precision}_{'-'.join(sorted(to_collect))}{size_suffix}.npz"
     filename = stats_dir / file_extension
 
+    logger.info(f"searching for cached stats in => {filename}")
+
     if not filename.exists() and download:
+        logger.info(f"stats not found locally.")
         remote_url = f"{REMOTE_ROOT_URL}/data/stats/{file_extension}"
         try:
-            print(f"Attempting to download {file_extension} from {remote_url}.")
+            logger.info(f"Attempting to download {file_extension} from {remote_url}.")
             (stats_dir / "/".join(file_extension.split("/")[:-1])).mkdir(
                 exist_ok=True, parents=True
             )
             torch.hub.download_url_to_file(remote_url, filename)
-            print("Successfully downloaded.")
+            logger.info("Successfully downloaded.")
         except Exception as e:
-            print(f"Unable to download due to {e}. Computing locally....")
+            logger.error(f"Unable to download due to {e}. Computing locally....")
 
     ds = get_ds() if not filename.exists() else None
 

@@ -5,6 +5,7 @@ from typing import Dict, List
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src.models import ModelandTokenizer
 from src.rome import repr_tools
 from src.utils.globals import *
 
@@ -16,8 +17,7 @@ inv_mom2_cache = {}
 
 
 def get_inv_cov(
-    model: AutoModelForCausalLM,
-    tok: AutoTokenizer,
+    mt: ModelandTokenizer,
     layer_name: str,
     mom2_dataset: str,
     mom2_n_samples: str,
@@ -30,7 +30,7 @@ def get_inv_cov(
 
     global inv_mom2_cache
 
-    model_name = model.config._name_or_path.replace("/", "_")
+    model_name = mt.name.lower().replace("/", "_")
     key = (model_name, layer_name)
 
     if key not in inv_mom2_cache:
@@ -39,11 +39,10 @@ def get_inv_cov(
             f"The result will be cached to avoid repetitive computation."
         )
         stat = layer_stats(
-            model,
-            tok,
-            layer_name,
-            STATS_DIR,
-            mom2_dataset,
+            mt=mt,
+            layer_name=layer_name,
+            stats_dir=STATS_DIR,
+            ds_name=mom2_dataset,
             to_collect=["mom2"],
             sample_size=mom2_n_samples,
             precision=mom2_dtype,
@@ -56,8 +55,7 @@ def get_inv_cov(
 
 
 def compute_u(
-    model: AutoModelForCausalLM,
-    tok: AutoTokenizer,
+    mt: ModelandTokenizer,
     request: Dict,
     hparams: ROMEHyperParams,
     layer: int,
@@ -71,8 +69,7 @@ def compute_u(
 
     # Compute projection token
     word_repr_args = dict(
-        model=model,
-        tok=tok,
+        mt=mt,
         layer=layer,
         module_template=hparams.rewrite_module_tmp,
         track="in",
@@ -108,12 +105,11 @@ def compute_u(
     u = cur_repr
     if hparams.mom2_adjustment:
         u = get_inv_cov(
-            model,
-            tok,
-            hparams.rewrite_module_tmp.format(layer),
-            hparams.mom2_dataset,
-            hparams.mom2_n_samples,
-            hparams.mom2_dtype,
+            mt=mt,
+            layer_name=hparams.rewrite_module_tmp.format(layer),
+            mom2_dataset=hparams.mom2_dataset,
+            mom2_n_samples=hparams.mom2_n_samples,
+            mom2_dtype=hparams.mom2_dtype,
         ) @ u.unsqueeze(1)
         u = u.squeeze()
 

@@ -1,3 +1,4 @@
+import logging
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -6,6 +7,7 @@ import numpy as np
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src.functional import free_gpu_cache
 from src.models import ModelandTokenizer
 from src.rome_utils import nethook
 from src.utils.generation import generate_fast
@@ -14,58 +16,116 @@ from .compute_u import compute_u
 from .compute_v import compute_v
 from .rome_hparams import ROMEHyperParams
 
+logger = logging.getLogger(__name__)
+
 CONTEXT_TEMPLATES_CACHE = None
 
 
+# def apply_rome_to_model(
+#     model: AutoModelForCausalLM,
+#     tok: AutoTokenizer,
+#     requests: List[Dict],
+#     hparams: ROMEHyperParams,
+#     copy=False,
+#     return_orig_weights=False,
+#     cache_template: Optional[str] = None,
+# ) -> Tuple[AutoModelForCausalLM, List[str]]:
+#     """
+#     Returns a model with the desired changes.
+
+#     :param copy: If true, will preserve the original model while creating a new one to edit.
+#         Note that you are responsible for deallocating the new model's memory to avoid leaks.
+
+#     :return: (1) the updated model, (2) an original copy of the weights that changed
+#     """
+
+#     if copy:
+#         model = deepcopy(model)
+
+#     weights_copy = {}
+
+#     for i, request in enumerate(requests):
+#         # Caching is only valid on first request, since the model changes afterwards
+#         deltas = get_kv_deltas(
+#             model, tok, request, hparams, (cache_template if i == 0 else None)
+#         )
+
+#         with torch.no_grad():
+#             # sequential update. each of requests can have different layers
+#             # useful for checking how ROME behaves with scaling the number of requests
+#             for w_name, (delta_u, delta_v) in deltas.items():
+#                 upd_matrix = delta_u.unsqueeze(1) @ delta_v.unsqueeze(0)
+#                 w = nethook.get_parameter(model, w_name)
+#                 upd_matrix = upd_matrix_match_shape(upd_matrix, w.shape)
+
+#                 if return_orig_weights and w_name not in weights_copy:
+#                     assert i == 0
+#                     weights_copy[w_name] = w.detach().clone()
+
+#                 w[...] += upd_matrix
+
+#         print(f"New weights successfully inserted into {list(deltas.keys())}")
+
+
+#     return model, weights_copy
+
+
+def restore_weights(model, weights_to_restore):
+    with torch.no_grad():
+        for module_name, weights in weights_to_restore.items():
+            module = nethook.get_module(model, module_name)
+            module.weight.copy_(weights["weight"])
+            if weights["bias"] is not None:
+                module.bias.copy_(weights["bias"])
+    logger.info(f"restored weights of modules {list(weights_to_restore.keys())}.")
+
+
+def save_original_weights(model, modules):
+    module_weights = {}
+    for module_name in modules:
+        module = nethook.get_module(model, module_name)
+        module_weights[module_name] = {
+            "weight": module.weight.detach().clone(),
+            "bias": module.bias.detach().clone() if module.bias is not None else None,
+        }
+    return module_weights
+
+
 def apply_rome_to_model(
-    model: AutoModelForCausalLM,
-    tok: AutoTokenizer,
-    requests: List[Dict],
+    mt: ModelandTokenizer,
+    requests: Dict | List[Dict],
     hparams: ROMEHyperParams,
-    copy=False,
-    return_orig_weights=False,
     cache_template: Optional[str] = None,
-) -> Tuple[AutoModelForCausalLM, List[str]]:
-    """
-    Returns a model with the desired changes.
+    return_orig_weights: bool = True,
+):
+    if isinstance(requests, dict):
+        requests = [requests]
 
-    :param copy: If true, will preserve the original model while creating a new one to edit.
-        Note that you are responsible for deallocating the new model's memory to avoid leaks.
+    if return_orig_weights:
+        # save the weights for future restoration
+        rewritten_modules = [
+            hparams.rewrite_module_tmp.format(layer) for layer in hparams.layers
+        ]
+        weights_copy = save_original_weights(mt.model, rewritten_modules)
 
-    :return: (1) the updated model, (2) an original copy of the weights that changed
-    """
-
-    if copy:
-        model = deepcopy(model)
-
-    weights_copy = {}
-
-    for i, request in enumerate(requests):
-        # Caching is only valid on first request, since the model changes afterwards
-        deltas = execute_rome(
-            model, tok, request, hparams, (cache_template if i == 0 else None)
-        )
+    for request in requests:
+        deltas = get_kv_deltas(mt, request, hparams, cache_template)
 
         with torch.no_grad():
-            for w_name, (delta_u, delta_v) in deltas.items():
-                upd_matrix = delta_u.unsqueeze(1) @ delta_v.unsqueeze(0)
-                w = nethook.get_parameter(model, w_name)
-                upd_matrix = upd_matrix_match_shape(upd_matrix, w.shape)
+            w_name, (delta_k, delta_v) = list(deltas.items())[0]
+            weights = nethook.get_parameter(mt.model, w_name)
+            upd_matrix = delta_k.unsqueeze(1) @ delta_v.unsqueeze(0)
+            upd_matrix = upd_matrix_match_shape(upd_matrix, weights.shape)
+            weights[...] += upd_matrix
 
-                if return_orig_weights and w_name not in weights_copy:
-                    assert i == 0
-                    weights_copy[w_name] = w.detach().clone()
-
-                w[...] += upd_matrix
-
-        print(f"New weights successfully inserted into {list(deltas.keys())}")
-
-    return model, weights_copy
+    if return_orig_weights:
+        return mt.model, weights_copy
+    else:
+        return mt.model
 
 
-def execute_rome(
-    model: AutoModelForCausalLM,
-    tok: AutoTokenizer,
+def get_kv_deltas(
+    mt: ModelandTokenizer,
     request: Dict,
     hparams: ROMEHyperParams,
     cache_template: Optional[str] = None,
@@ -85,15 +145,15 @@ def execute_rome(
         f"[{request['prompt'].format(request['subject'])}] -> [{request['target_new']['str']}]"
     )
 
-    # Retrieve weights that user desires to change
-    weights = {
-        f"{hparams.rewrite_module_tmp.format(layer)}.weight": nethook.get_parameter(
-            model, f"{hparams.rewrite_module_tmp.format(layer)}.weight"
-        )
-        for layer in hparams.layers
-    }
-    # Save old weights for future restoration
-    weights_copy = {k: v.detach().clone() for k, v in weights.items()}
+    # # Retrieve weights that user desires to change
+    # weights = {
+    #     f"{hparams.rewrite_module_tmp.format(layer)}.weight": nethook.get_parameter(
+    #         mt.model, f"{hparams.rewrite_module_tmp.format(layer)}.weight"
+    #     )
+    #     for layer in hparams.layers
+    # }
+    # # Save old weights for future restoration
+    # weights_copy = {k: v.detach().clone() for k, v in weights.items()}
 
     # Update loop: sequentially intervene at each specified layer
     deltas = {}
@@ -131,13 +191,12 @@ def execute_rome(
             left_vector
             if left_vector is not None
             else compute_u(
-                model,
-                tok,
-                request,
-                hparams,
-                layer,
-                get_context_templates(
-                    model, tok, hparams.context_template_length_params
+                mt=mt,
+                request=request,
+                hparams=hparams,
+                layer=layer,
+                context_templates=get_context_templates(
+                    mt=mt, length_params=hparams.context_template_length_params
                 ),
             )
         )
@@ -146,18 +205,17 @@ def execute_rome(
             right_vector
             if right_vector is not None
             else compute_v(
-                model,
-                tok,
-                request,
-                hparams,
-                layer,
-                left_vector,
-                get_context_templates(
-                    model, tok, hparams.context_template_length_params
+                mt=mt,
+                request=request,
+                hparams=hparams,
+                layer=layer,
+                left_vector=left_vector,
+                context_templates=get_context_templates(
+                    mt, hparams.context_template_length_params
                 ),
             )
         )
-        print("Right vector shape:", right_vector.shape)
+        logger.debug(f"Right vector shape: { right_vector.shape}")
 
         # Cache vectors for future use
         if cache_fname is not None and require_recompute:
@@ -169,27 +227,27 @@ def execute_rome(
                     "right_vector": right_vector.detach().cpu().numpy(),
                 },
             )
-            print(f"Cached k/v pair at {cache_fname}")
+            logger.info(f"Cached k/v pair at {cache_fname}")
 
         with torch.no_grad():
             # Determine correct transposition of delta matrix
             weight_name = f"{hparams.rewrite_module_tmp.format(layer)}.weight"
-            upd_matrix = left_vector.unsqueeze(1) @ right_vector.unsqueeze(0)
-            upd_matrix = upd_matrix_match_shape(upd_matrix, weights[weight_name].shape)
+            # upd_matrix = left_vector.unsqueeze(1) @ right_vector.unsqueeze(0)
+            # upd_matrix = upd_matrix_match_shape(upd_matrix, weights[weight_name].shape)
 
-            # Update model weights and record desired changes in `delta` variable
-            weights[weight_name][...] += upd_matrix
+            # # Update model weights and record desired changes in `delta` variable
+            # weights[weight_name][...] += upd_matrix
             deltas[weight_name] = (
                 left_vector.detach(),
                 right_vector.detach(),
             )
 
-    # Restore state of original model
-    with torch.no_grad():
-        for k, v in weights.items():
-            v[...] = weights_copy[k]
+    # # Restore state of original model
+    # with torch.no_grad():
+    #     for k, v in weights.items():
+    #         v[...] = weights_copy[k]
 
-    print(f"Deltas successfully computed for {list(weights.keys())}")
+    logger.info(f"Deltas successfully computed for {weight_name}")
 
     return deltas
 

@@ -1,4 +1,5 @@
 import copy
+import gc
 import logging
 import re
 import unicodedata
@@ -470,3 +471,15 @@ def get_h(
         for layer in layers
     }
     return h
+
+
+def free_gpu_cache():
+    before = torch.cuda.memory_allocated()
+    gc.collect()
+    torch.cuda.empty_cache()
+    after = torch.cuda.memory_allocated()
+    freed = before - after
+
+    logger.debug(
+        f"freed {models.bytes_to_human_readable(freed)} | before={models.bytes_to_human_readable(before)} -> after={models.bytes_to_human_readable(after)}"
+    )

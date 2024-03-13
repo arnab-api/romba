@@ -20,8 +20,8 @@ def compute_v(
     request: Dict,
     hparams: ROMEHyperParams,
     layer: int,
-    # left_vector: torch.Tensor,
     context_templates: List[str],
+    left_vector: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Computes the value (right) vector for the rank-1 update.
@@ -71,7 +71,7 @@ def compute_v(
     # Finalize rewrite and loss layers
     loss_layer = max(hparams.v_loss_layer, layer)
     logger.info(f"Rewrite layer is {layer}")
-    logger.info(f"Tying optimization objective to {loss_layer}")
+    logger.info(f"Tying optimization objective to layer {loss_layer}")
 
     # Set up an optimization over a latent vector that, when output at the
     # rewrite layer, i.e. hypothesized fact lookup location, will induce the
@@ -175,32 +175,35 @@ def compute_v(
 
     target = target_init + delta
 
-    return target
+    # zero out the grads so that they don't accumulate and consume extra memory
+    mt.model.zero_grad(set_to_none=True)
 
-    # ! This is not supposed to be commented out - apply ROME wont work
+    if left_vector is None:
+        logger.warning("No left vector provided. right vector ins't normalized")
+        return target
+
     # TODO(arnab): refactor this part out of compute_v.
-    # # Retrieve cur_input, the current input to the 2nd MLP layer, and
-    # # cur_output, the original output of the 2nd MLP layer.
-    # cur_input, cur_output = get_module_input_output_at_word(
-    #     model,
-    #     tok,
-    #     layer,
-    #     context_template=request["prompt"],
-    #     word=request["subject"],
-    #     module_template=hparams.rewrite_module_tmp,
-    #     fact_token_strategy=hparams.fact_token,
-    # )
+    # Retrieve cur_input, the current input to the 2nd MLP layer, and
+    # cur_output, the original output of the 2nd MLP layer.
+    cur_input, cur_output = get_module_input_output_at_word(
+        mt=mt,
+        layer=layer,
+        context_template=request["prompt"],
+        word=request["subject"],
+        module_template=hparams.rewrite_module_tmp,
+        fact_token_strategy=hparams.fact_token,
+    )
 
-    # # Solving the linear system to compute the right vector
-    # right_vector = (target - cur_output) / torch.dot(cur_input, left_vector)
-    # print(f"Delta norm: {(target - cur_output).norm().item()}")
-    # print(
-    #     f"Change in target norm: {target_init.norm().item()} to {target.norm().item()} => {(target.norm() - target_init.norm()).item()}"
-    # )
-    # print(f"Division Factor: {torch.dot(cur_input, left_vector).item()}")
-    # print(f"Right vector norm: {right_vector.norm()}")
+    # Solving the linear system to compute the right vector
+    right_vector = (target - cur_output) / torch.dot(cur_input, left_vector)
+    logger.debug(f"Delta norm: {(target - cur_output).norm().item()}")
+    logger.debug(
+        f"Change in target norm: {target_init.norm().item()} to {target.norm().item()} => {(target.norm() - target_init.norm()).item()}"
+    )
+    logger.debug(f"Division Factor: {torch.dot(cur_input, left_vector).item()}")
+    logger.debug(f"Right vector norm: {right_vector.norm()}")
 
-    # return right_vector
+    return right_vector
 
 
 def get_module_input_output_at_word(

@@ -55,7 +55,7 @@ class ModelandTokenizer:
             tokenizer.pad_token = tokenizer.eos_token
             model.eval()
             logger.info(
-                f"loaded model <{model_path}> | size: {get_model_size(model) :.3f} MB | dtype: {torch_dtype} | device: {device}"
+                f"loaded model <{model_path}> | size: {get_model_size(model)} | dtype: {torch_dtype} | device: {device}"
             )
             self.name = model_path
 
@@ -193,8 +193,15 @@ def get_model_size(
         buffer_size += buffer.nelement() * buffer.element_size()
 
     size_all = param_size + buffer_size
+
+    return bytes_to_human_readable(size_all, unit)
+
+
+def bytes_to_human_readable(
+    size: int, unit: Literal["B", "KB", "MB", "GB"] = "MB"
+) -> str:
     denom = {"B": 1, "KB": 2**10, "MB": 2**20, "GB": 2**30}[unit]
-    return size_all / denom
+    return f"{size / denom:.3f} {unit}"
 
 
 def unwrap_model(mt: ModelandTokenizer | torch.nn.Module) -> torch.nn.Module:
