@@ -4,7 +4,7 @@ import shutil
 from itertools import islice
 from pathlib import Path
 from time import time
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 
@@ -59,29 +59,29 @@ def main(
     dir_name: str,
     num_edits: int = 1,
     use_cache: bool = False,
+    layer: Optional[int] = None,
 ):
     # Set algorithm-specific variables
     params_class, apply_algo = ALG_DICT[alg_name]
 
     # Determine run directory
     # Create new dir if not continuing from prev run OR prev run doesn't exist
-    if (
-        continue_from_run is None
-        or not (run_dir := RESULTS_DIR / dir_name / continue_from_run).exists()
-    ):
+    DIR = RESULTS_DIR / dir_name
+    if layer is not None:
+        DIR = DIR / f"layer_{layer}"
+    if continue_from_run is None or not (run_dir := DIR / continue_from_run).exists():
         continue_from_run = None
     if continue_from_run is None:
-        alg_dir = RESULTS_DIR / dir_name
-        if alg_dir.exists():
+        if DIR.exists():
             id_list = [
                 int(str(x).split("_")[-1])
-                for x in alg_dir.iterdir()
-                if str(x).split("_")[-1].isnumeric()
+                for x in DIR.iterdir()
+                if str(x).split("_")[-1].isnumeric() and str(x).startswith("run_")
             ]
             run_id = 0 if not id_list else max(id_list) + 1
         else:
             run_id = 0
-        run_dir = RESULTS_DIR / dir_name / f"run_{str(run_id).zfill(3)}"
+        run_dir = DIR / f"run_{str(run_id).zfill(3)}"
         run_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Results will be stored at {run_dir}")
 
@@ -92,8 +92,13 @@ def main(
         else HPARAMS_DIR / alg_name / hparams_fname
     )
     hparams = params_class.from_json(params_path)
+    if layer is not None:
+        logger.warn(f"Overriding hparams layer to {layer}")
+        hparams.layers = [layer]
     if not (run_dir / "params.json").exists():
-        shutil.copyfile(params_path, run_dir / "params.json")
+        # shutil.copyfile(params_path, run_dir / "params.json")
+        with open(run_dir / "params.json", "w") as f:
+            json.dump(hparams.__dict__, f, indent=1)
     logger.info(f"Executing {alg_name} with parameters {hparams}")
 
     # Instantiate vanilla model
@@ -306,6 +311,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Use cached k/v pairs",
     )
+    parser.add_argument(
+        "--layer",
+        type=int,
+        default=-1,
+        help="layer to edit. if -1, then will parse layer from the default hparams file",
+    )
     parser.set_defaults(skip_generation_tests=False, conserve_memory=False)
     args = parser.parse_args()
 
@@ -313,16 +324,17 @@ if __name__ == "__main__":
     logger.info(f"Running with args: {args}")
 
     main(
-        args.alg_name,
-        args.model_name,
-        args.hparams_fname,
-        args.ds_name,
-        args.dataset_size_limit,
-        args.continue_from_run,
-        args.skip_generation_tests,
-        args.generation_test_interval,
-        args.conserve_memory,
+        alg_name=args.alg_name,
+        model_name=args.model_name,
+        hparams_fname=args.hparams_fname,
+        ds_name=args.ds_name,
+        dataset_size_limit=args.dataset_size_limit,
+        continue_from_run=args.continue_from_run,
+        skip_generation_tests=args.skip_generation_tests,
+        generation_test_interval=args.generation_test_interval,
+        conserve_memory=args.conserve_memory,
         dir_name=args.alg_name,
         num_edits=args.num_edits,
         use_cache=args.use_cache,
+        layer=args.layer if args.layer != -1 else None,
     )

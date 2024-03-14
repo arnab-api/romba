@@ -1,5 +1,6 @@
 import collections
 import json
+import logging
 from pprint import pprint
 from typing import List, Optional
 
@@ -7,6 +8,8 @@ import numpy as np
 from scipy.stats import hmean
 
 from src.globals import *
+
+logger = logging.getLogger(__name__)
 
 
 def main(
@@ -33,7 +36,9 @@ def main(
                 with open(case_file, "r") as f:
                     data = json.load(f)
             except json.JSONDecodeError:
-                print(f"Could not decode {case_file} due to format error; skipping.")
+                logger.error(
+                    f"Could not decode {case_file} due to format error; skipping."
+                )
 
             case_id = data["case_id"]
             if first_n_cases is not None and case_id >= first_n_cases:
@@ -44,12 +49,13 @@ def main(
 
             for prefix in ["pre", "post"]:
                 # Probability metrics for which new should be lower (better) than true
+                # ! negative log likelihoods
                 for key in ["rewrite_prompts_probs", "paraphrase_prompts_probs"]:
                     if prefix not in data or key not in data[prefix]:
                         continue
 
                     sum_key_discrete = f"{prefix}_{key.split('_')[0]}_success"
-                    sum_key_cont = f"{prefix}_{key.split('_')[0]}_diff"
+                    sum_key_cont = f"{prefix}_{key.split('_')[0]}_diff"  # prob diff
 
                     cur_sum[sum_key_discrete].append(
                         np.mean(

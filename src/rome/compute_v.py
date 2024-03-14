@@ -144,6 +144,7 @@ def compute_v(
         # Aggregate total losses
         nll_loss_each = -(loss * mask).sum(1) / target_ids.size(0)
         nll_loss = nll_loss_each.mean()
+        avg_prob = torch.exp(-nll_loss_each).mean().item()
         kl_loss = hparams.kl_factor * torch.nn.functional.kl_div(
             kl_distr_init, kl_log_probs, log_target=True, reduction="batchmean"
         )
@@ -155,12 +156,15 @@ def compute_v(
         logger.info(
             f"loss {np.round(loss.item(), 3)} = {np.round(nll_loss.item(), 3)} + {np.round(kl_loss.item(), 3)} + {np.round(weight_decay.item(), 3)} "
             f"avg prob of [{request['target_new']['str']}] "
-            f"{torch.exp(-nll_loss_each).mean().item()}"
+            f"{avg_prob:.5f}"
         )
         if loss < 5e-2:
             break
 
         if it == hparams.v_num_grad_steps - 1:
+            break
+
+        if it > 12 and avg_prob > 0.95:
             break
 
         # Backpropagate
