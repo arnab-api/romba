@@ -139,11 +139,11 @@ class RelationProperties(DataClassJsonMixin):
     range_name: str
     symmetric: bool
     fn_type: str
-    disambiguating: bool
+    # disambiguating: bool
 
 
-@dataclass(frozen=True)
-class Relation(DataClassJsonMixin):
+@dataclass(frozen=False)
+class Relation(DataClassJsonMixin, Dataset):
     """An abstract mapping between subjects and objects.
 
     Attributes:
@@ -163,8 +163,59 @@ class Relation(DataClassJsonMixin):
     samples: list[RelationSample]
     properties: RelationProperties
 
+    _prompt_template_idx: int = 0  # use the first prompt template by default
+    _few_shot_samples: list[RelationSample] = field(default_factory=list)
+    _few_shot_prefix: str | None = None
     _domain: list[str] | None = None
     _range: list[str] | None = None
+
+    def __init__(
+        self,
+        name: str,
+        prompt_templates: str,
+        samples: list[RelationSample],
+        properties: dict,
+        prompt_templates_zs: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.name = name
+        self.prompt_templates = prompt_templates
+        self.samples = samples
+        self.properties = properties
+        self._range = None
+        self._range = self.range
+        self.prompt_templates_zs = prompt_templates_zs
+
+        self._few_shot_samples = []
+        self.select_icl_examples(5)  # call the initialized object to change the number
+
+        logger.info(f'initialized relation -> "{name}" with {len(self)} samples')
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        query = self.prompt_templates[self._prompt_template_idx].format(
+            self.samples[idx].subject
+        )
+        object = self.samples[idx].object
+        full_query = self._few_shot_prefix + "\n" + query
+        return (full_query, object)
+
+    def select_icl_examples(self, num_icl):
+        # Select few shot samples
+        self._few_shot_samples = random.sample(
+            self.samples + self._few_shot_samples, num_icl
+        )
+        self._few_shot_prefix = "\n".join(
+            [
+                self.prompt_templates[self._prompt_template_idx].format(demo.subject)
+                + " "
+                + demo.object
+                for demo in self._few_shot_samples
+            ]
+        )
+        self.samples = list(set(self.samples) - set(self._few_shot_samples))
 
     @property
     def domain(self) -> set[str]:
@@ -376,7 +427,16 @@ def load_relation_dict(file: PathLike) -> dict:
 
 def load_relation(file: PathLike) -> Relation:
     """Load a single relation from a json file."""
-    return Relation.from_dict(load_relation_dict(file))
+    relation_dict = load_relation_dict(file)
+    return Relation(
+        name=relation_dict["name"],
+        prompt_templates=relation_dict["prompt_templates"],
+        prompt_templates_zs=relation_dict["prompt_templates_zs"],
+        samples=[
+            RelationSample.from_dict(sample) for sample in relation_dict["samples"]
+        ],
+        properties=RelationProperties.from_dict(relation_dict["properties"]),
+    )
 
 
 def load_dataset(*paths: PathLike) -> RelationDataset:
@@ -429,23 +489,6 @@ def load_dataset(*paths: PathLike) -> RelationDataset:
     return RelationDataset(relations)
 
 
-def load_dataset_from_args(args: argparse.Namespace) -> RelationDataset:
-    """Load a dataset based on args from `add_data_args`."""
-    dataset = load_dataset()
-    dataset = dataset.filter(
-        relation_names=args.rel_names,
-        relation_type=args.rel_types,
-        domain_name=args.rel_domains,
-        range_name=args.rel_ranges,
-        disambiguating=args.rel_disamb,
-        symmetric=args.rel_sym,
-        fn_type=args.rel_fn_types,
-    )
-    if len(dataset.relations) == 0:
-        raise ValueError("no relations found matching all criteria")
-    return dataset
-
-
 # ------------------------------------------
 # experiment dataclasses
 # ------------------------------------------
@@ -476,11 +519,11 @@ def load_dataset_from_args(args: argparse.Namespace) -> RelationDataset:
 #     trial_results: list[TrialResult]
 
 
-# @dataclass(frozen=True)
-# class ReprReplacementResults(DataClassJsonMixin):
-#     source_QA: Sample
-#     edit_QA: Sample
-#     edit_index: int
-#     edit_token: str
-#     predictions_after_patching: dict[int, list[PredictedToken]]
-#     rank_edit_ans_after_patching: dict[int, int]
+@dataclass(frozen=True)
+class ReprReplacementResults(DataClassJsonMixin):
+    source_QA: RelationSample
+    edit_QA: RelationSample
+    edit_index: int
+    edit_token: str
+    predictions_after_patching: dict[int, list[PredictedToken]]
+    rank_edit_ans_after_patching: dict[int, int]

@@ -79,7 +79,8 @@ def plot_trace_heatmap(result, savepdf=None, title=None, xlabel=None, modelname=
             # The following should be cb.ax.set_xlabel, but this is broken in matplotlib 3.5.1.
             cb.ax.set_title(
                 f"p({str(answer).strip()})",
-                y=-len(labels) * 0.011,
+                # y=-len(labels) * 0.011,
+                y=-0.13,
                 fontsize=10,
             )
         if savepdf:
@@ -111,7 +112,7 @@ def plot_hidden_flow(
         mt,
         prompt,
         subject,
-        samples=samples,
+        num_samples=samples,
         noise=noise,
         uniform_noise=uniform_noise,
         window=window,

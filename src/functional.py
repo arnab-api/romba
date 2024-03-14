@@ -1,6 +1,7 @@
 import copy
 import gc
 import logging
+import random
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -15,7 +16,7 @@ from transformers import AutoTokenizer
 from mamba_minimal.model import Mamba
 from src import models
 from src import tokens as tokenization_utils
-from src.data.dataclasses import PredictedToken, Relation
+from src.data.dataclasses import PredictedToken, Relation, RelationSample
 from src.models import ModelandTokenizer
 from src.utils.typing import Layer
 
@@ -354,7 +355,7 @@ def filter_samples_by_model_knowledge(
     mt: ModelandTokenizer, relation: Relation
 ) -> Relation:
     """Filter samples by model knowledge."""
-    logger.debug(f'"{relation.name}" | filtering with {mt.model_name}')
+    logger.debug(f'"{relation.name}" | filtering with {mt.name}')
 
     filtered_samples = []
     for i in range(len(relation.samples)):
@@ -483,3 +484,25 @@ def free_gpu_cache():
     # logger.debug(
     #     f"freed {models.bytes_to_human_readable(freed)} | before={models.bytes_to_human_readable(before)} -> after={models.bytes_to_human_readable(after)}"
     # )
+
+
+def random_edit_targets(
+    samples: list[RelationSample],
+) -> dict[RelationSample, RelationSample]:
+    """Pick random edit targets for each of the given samples.
+
+    If there are no other samples with different subject and different object,
+    then the sample is skipped.
+    """
+    targets = {}
+    for sample in samples:
+        others = [
+            x
+            for x in samples
+            if x.subject != sample.subject and x.object != sample.object
+        ]
+        if not others:
+            logger.debug(f"no valid edit target for {sample}, skipping")
+            continue
+        targets[sample] = random.choice(others)
+    return targets

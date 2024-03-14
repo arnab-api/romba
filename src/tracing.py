@@ -1,23 +1,26 @@
+import copy
+import json
 import logging
 import types
 from collections import defaultdict
-from typing import Optional, get_args
+from typing import Literal, Optional, get_args
 
 import baukit
 import numpy
 import torch
+from tqdm import tqdm
+
+import src.tokens as tokenizer_utils
 
 # from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba
 from mamba_minimal.model import Mamba
-from src import models
+from src import data, functional
 from src.functional import (
     decode_tokens,
     find_token_range,
     make_inputs,
     predict_from_input,
 )
-import src.tokens as tokenization_utils
-
 from src.hooking.mamba import MambaBlock_Hook_Points, MambaBlockForwardPatcher
 from src.models import ModelandTokenizer
 
@@ -62,12 +65,9 @@ def trace_with_patch(
     any number of token indices and layers can be listed.
     """
     if mamba_block_hook is not None:
-        assert models.is_mamba_variant(
-            mt
+        assert isinstance(
+            mt.model, Mamba
         ), "if `mamba_block_hook` is not None, the model should be a Mamba"
-        assert (
-            models.is_mamba_fast(mt) == False
-        ), "this implementation isn't compatible with the official implementation"
         assert mamba_block_hook in get_args(
             MambaBlock_Hook_Points
         ), f"Not a valid MambaBock hook `{mamba_block_hook=}`"
@@ -208,7 +208,7 @@ def calculate_hidden_flow(
     prompt: str,
     subject: str,
     alt_subject: Optional[str] = None,
-    samples=10,
+    num_samples=10,
     noise=0.1,
     token_range=None,
     uniform_noise=False,
@@ -225,7 +225,7 @@ def calculate_hidden_flow(
         assert kind in ["mlp", "attn", None]
 
     if alt_subject is None:
-        inp = make_inputs(mt.tokenizer, [prompt] * (samples + 1))
+        inp = make_inputs(mt.tokenizer, [prompt] * (num_samples + 1))
         with torch.no_grad():
             answer_t, base_score = [d[0] for d in predict_from_input(mt.model, inp)]
         e_range = find_token_range(
@@ -251,10 +251,10 @@ def calculate_hidden_flow(
         if "{}" in prompt:
             prompt = prompt.format(subject)
         clean_prompt = prompt
-        to_be_patched_prompt = prompt.replace(subject, alt_subject)
-        with tokenization_utils.set_padding_side(mt.tokenizer, padding_side="left"):
+        alt_prompt = prompt.replace(subject, alt_subject)
+        with tokenizer_utils.set_padding_side(mt.tokenizer, padding_side="left"):
             inp = mt.tokenizer(
-                [clean_prompt, to_be_patched_prompt],
+                [clean_prompt, alt_prompt],
                 return_tensors="pt",
                 padding="longest",
                 return_offsets_mapping=True,
@@ -267,7 +267,7 @@ def calculate_hidden_flow(
             offset_mapping=offset_mapping[0],
         )
         alt_subj_range = find_token_range(
-            string=to_be_patched_prompt,
+            string=alt_prompt,
             substring=alt_subject,
             tokenizer=mt.tokenizer,
             offset_mapping=offset_mapping[1],
@@ -430,10 +430,9 @@ def trace_important_window(
     return torch.stack(table)
 
 
-# from src.data.dataclasses import Sample
-# from src.functional import get_h, patch_repr, predict_next_token
-# from src.models import ModelandTokenizer
-# from src.utils.dataclasses import PredictedToken, ReprReplacementResults
+from src.data.dataclasses import PredictedToken, RelationSample, ReprReplacementResults
+from src.functional import get_h, patch_repr, predict_next_token
+from src.models import ModelandTokenizer
 
 # def trace_with_patching_from_alt_subj(
 #     mt,
@@ -454,81 +453,215 @@ def trace_important_window(
 #     ), "Need to pass 2 inputs for the uncorrupted and corrupted runs"
 
 
-# def patch_individual_layers_for_single_edit(
-#     mt: ModelandTokenizer,
-#     layers: list[int],
-#     orig_sample: Sample,
-#     edit_sample: Sample,
-#     query: str,
-# ) -> ReprReplacementResults:
-#     # TODO: Support for multiple edits
-#     # ! Multiple edit acting weird. Could not find the bug.
+def patch_individual_layers_for_single_edit(
+    mt: ModelandTokenizer,
+    layers: list[int],
+    orig_sample: RelationSample,
+    edit_sample: RelationSample,
+    query: str,
+) -> ReprReplacementResults:
+    # TODO: Support for multiple edits
+    # ! Multiple edit acting weird. Could not find the bug.
 
-#     if "{}" in query:
-#         query = query.format(orig_sample.subject)
+    if "{}" in query:
+        query = query.format(orig_sample.subject)
 
-#     edit_h = get_h(
-#         mt=mt,
-#         prompt=query.replace(orig_sample.subject, edit_sample.subject),
-#         subject=edit_sample.subject,
-#         layers=[mt.layer_name_format.format(layer_idx) for layer_idx in layers],
-#     )
+    edit_h = get_h(
+        mt=mt,
+        prompt=query.replace(orig_sample.subject, edit_sample.subject),
+        subject=edit_sample.subject,
+        layers=[mt.layer_name_format.format(layer_idx) for layer_idx in layers],
+    )
 
-#     tokenized = mt.tokenizer(
-#         query, return_offsets_mapping=True, return_tensors="pt"
-#     ).to(mt.device)
-#     offset_mapping = tokenized.pop("offset_mapping")[0]
+    tokenized = mt.tokenizer(
+        query, return_offsets_mapping=True, return_tensors="pt"
+    ).to(mt.device)
+    offset_mapping = tokenized.pop("offset_mapping")[0]
 
-#     subject_start, subject_end = find_token_range(
-#         query,
-#         orig_sample.subject,
-#         tokenizer=mt.tokenizer,
-#         offset_mapping=offset_mapping,
-#     )
+    subject_start, subject_end = find_token_range(
+        query,
+        orig_sample.subject,
+        tokenizer=mt.tokenizer,
+        offset_mapping=offset_mapping,
+    )
 
-#     subj_last_idx = subject_end - 1
-#     edit_rank_after_patching: dict[int, tuple[int, PredictedToken]] = {}
-#     predictions: dict[int, list[PredictedToken]] = {}
-#     edit_token = mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx])
+    subj_last_idx = subject_end - 1
+    edit_rank_after_patching: dict[int, tuple[int, PredictedToken]] = {}
+    predictions: dict[int, list[PredictedToken]] = {}
+    edit_token = mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx])
 
-#     logger.debug("=" * 100)
-#     logger.debug(
-#         f"({orig_sample.subject}, {orig_sample.object}) => ({edit_sample.subject}, {edit_sample.object}) | edit_idx={subj_last_idx}[{edit_token}]"
-#     )
+    logger.debug("=" * 100)
+    logger.debug(
+        f"({orig_sample.subject}, {orig_sample.object}) => ({edit_sample.subject}, {edit_sample.object}) | edit_idx={subj_last_idx}[{edit_token}]"
+    )
 
-#     for layer_idx in layers:
-#         layer_name = mt.layer_name_format.format(layer_idx)
-#         with baukit.Trace(
-#             module=mt.model,
-#             layer=layer_name,
-#             edit_output=patch_repr(
-#                 patch_layer=layer_name,
-#                 patch_idx=subj_last_idx,
-#                 patch_vector=edit_h[layer_name],
-#             ),
-#         ):
-#             preds, edit_answer_rank = predict_next_token(
-#                 mt=mt,
-#                 prompt=query,
-#                 token_of_interest=f" {edit_sample.object}"
-#                 if "llama" not in mt.model_name.lower()
-#                 else edit_sample.object,  # because LLaMA tokenizers handle spacing dynamically
-#             )
-#         predictions[layer_idx] = preds[0]
-#         edit_rank_after_patching[layer_idx] = edit_answer_rank[0]
-#         logger.debug(
-#             f"Layer {layer_idx} => rank({edit_sample.object})={edit_answer_rank[0][0]} [{edit_answer_rank[0][1]}]  | preds={', '.join(str(p) for p in preds[0])}"
-#         )
-#     logger.debug("-" * 100)
+    for layer_idx in layers:
+        layer_name = mt.layer_name_format.format(layer_idx)
+        with baukit.Trace(
+            module=mt.model,
+            layer=layer_name,
+            edit_output=patch_repr(
+                patch_layer=layer_name,
+                patch_idx=subj_last_idx,
+                patch_vector=edit_h[layer_name],
+            ),
+        ):
+            preds, edit_answer_rank = predict_next_token(
+                mt=mt,
+                prompt=query,
+                token_of_interest=(
+                    f" {edit_sample.object}"
+                    if "llama" not in mt.model_name.lower()
+                    else edit_sample.object
+                ),  # because LLaMA tokenizers handle spacing dynamically
+            )
+        predictions[layer_idx] = preds[0]
+        edit_rank_after_patching[layer_idx] = edit_answer_rank[0]
+        logger.debug(
+            f"Layer {layer_idx} => rank({edit_sample.object})={edit_answer_rank[0][0]} [{edit_answer_rank[0][1]}]  | preds={', '.join(str(p) for p in preds[0])}"
+        )
+    logger.debug("-" * 100)
 
-#     return ReprReplacementResults(
-#         source_QA=orig_sample,
-#         edit_QA=edit_sample,
-#         edit_index=subj_last_idx,
-#         edit_token=mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx]),
-#         predictions_after_patching=predictions,
-#         rank_edit_ans_after_patching=edit_rank_after_patching,
-#     )
+    return ReprReplacementResults(
+        source_QA=orig_sample,
+        edit_QA=edit_sample,
+        edit_index=subj_last_idx,
+        edit_token=mt.tokenizer.decode(tokenized["input_ids"][0][subj_last_idx]),
+        predictions_after_patching=predictions,
+        rank_edit_ans_after_patching=edit_rank_after_patching,
+    )
+
+
+def detensorize_indirect_effects(indirect_effects):
+    hf = copy.deepcopy(indirect_effects)
+    for k in hf:
+        if isinstance(hf[k], torch.Tensor):
+            hf[k] = hf[k].item() if k == "high_score" else hf[k].cpu().numpy().tolist()
+    return hf
+
+
+def load_causal_traces(file="causal_traces.json"):
+    with open(file, "r") as f:
+        indirect_effect_collection = json.load(f)
+
+    for subject in indirect_effect_collection:
+        for key in indirect_effect_collection[subject]:
+            if (
+                isinstance(indirect_effect_collection[subject][key], list)
+                and isinstance(indirect_effect_collection[subject][key][0], str)
+                == False
+            ):
+                indirect_effect_collection[subject][key] = torch.tensor(
+                    indirect_effect_collection[subject][key]
+                )
+
+    return indirect_effect_collection
+
+
+def calculate_average_indirect_effects(
+    mt: ModelandTokenizer,
+    prompt: str,
+    samples: list[RelationSample],
+    corruption_strategy: Literal["corrupt", "alt_patch"] = "alt_patch",
+    n_trials: int | None = None,
+    save_path: str | None = None,
+    **kwargs,
+):
+    indirect_effect_collection = {}
+    if corruption_strategy == "alt_patch":
+        edit_targets = functional.random_edit_targets(samples=samples)
+    samples = samples if n_trials is None else samples[:n_trials]
+    for sample in tqdm(samples):
+        alt_subject = None
+        if corruption_strategy == "alt_patch":
+            alt_subject = edit_targets[sample].subject
+        indirect_effects = calculate_hidden_flow(
+            mt=mt,
+            prompt=prompt,
+            subject=sample.subject,
+            alt_subject=alt_subject,
+            **kwargs,
+        )
+        indirect_effect_collection[sample.subject] = detensorize_indirect_effects(
+            indirect_effects
+        )
+
+        if save_path is not None:
+            with open(save_path, "w") as f:
+                json.dump(indirect_effect_collection, f)
+
+    return average_indirect_effects(indirect_effect_collection)
+
+
+def average_indirect_effects(indirect_effect_collection):
+    aie = {
+        "input_tokens": [
+            "prefix",
+            "subject_[:-2]",
+            "subject_2nd_last",
+            "subject_last",
+            "further tokens",
+            "last token",
+        ],
+        "answer": "answer",
+    }
+
+    prefixes = []
+    low_scores = []
+    subject_first = []
+    subject_2nd_last = []
+    subject_last = []
+    further_tokens = []
+    last_token = []
+    for subject in indirect_effect_collection:
+        result = indirect_effect_collection[subject]
+        differences = torch.tensor(result["scores"])
+        prefixes.append(differences[: result["subject_range"][0]].mean(dim=0))
+        low_scores.append(result["low_score"])
+        subject_last.append(differences[result["subject_range"][1] - 1])
+        subject_2nd_last.append(differences[result["subject_range"][1] - 2])
+        #     print(result['subject_range'],  result['subject_range'][1] - 2, differences.shape)
+        if result["subject_range"][1] - 2 != result["subject_range"][0]:
+            subject_first.append(
+                differences[
+                    result["subject_range"][0] : result["subject_range"][1] - 2
+                ].mean(dim=0)
+            )
+        else:
+            subject_first.append(torch.zeros(differences.shape[1]))
+        last_token.append(differences[-1])
+
+        # print(result["subject_range"][1], len(result["input_tokens"]))
+        if result["subject_range"][1] != len(result["input_tokens"]) - 1:
+            further_tokens.append(
+                differences[result["subject_range"][1] : -1].mean(dim=0)
+            )
+        else:
+            further_tokens.append(torch.zeros(differences.shape[1]))
+
+    prefixes = torch.stack(prefixes).mean(dim=0)
+    subject_first = torch.stack(subject_first).mean(dim=0)
+    subject_2nd_last = torch.stack(subject_2nd_last).mean(dim=0)
+    subject_last = torch.stack(subject_last).mean(dim=0)
+    further_tokens = torch.stack(further_tokens).mean(dim=0)
+    last_token = torch.stack(last_token).mean(dim=0)
+
+    aie["low_score"] = torch.tensor(low_scores).mean()
+    aie["kind"] = indirect_effect_collection[subject]["kind"]
+    aie["subject_range"] = (1, 4)
+
+    aie["scores"] = torch.stack(
+        [
+            prefixes,
+            subject_first,
+            subject_2nd_last,
+            subject_last,
+            further_tokens,
+            last_token,
+        ]
+    )
+
+    return aie
 
 
 # def trace_with_repatch(
