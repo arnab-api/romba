@@ -60,18 +60,45 @@ def main(
     num_edits: int = 1,
     use_cache: bool = False,
     layer: Optional[int] = None,
+    rewrite_module_tmp: Optional[str] = None,
 ):
     # Set algorithm-specific variables
     params_class, apply_algo = ALG_DICT[alg_name]
 
-    # Determine run directory
-    # Create new dir if not continuing from prev run OR prev run doesn't exist
-    DIR = RESULTS_DIR / dir_name
-    if layer is not None:
-        DIR = DIR / f"layer_{layer}"
+    # parse the hparams and determine the directory to save the results
     if continue_from_run is None or not (run_dir := DIR / continue_from_run).exists():
         continue_from_run = None
+
+    # Get run hyperparameters
+    params_path = (
+        run_dir / "params.json"
+        if continue_from_run is not None
+        else HPARAMS_DIR / alg_name / hparams_fname
+    )
+    hparams = params_class.from_json(params_path)
+    if layer is not None:
+        if continue_from_run is not None:
+            assert (
+                layer == hparams.layers[0]
+            ), f"Layer mismatch: specified layer {layer} is different from the previous run {hparams.layers[0]}"
+        logger.warn(f"Overriding hparams layer to {layer}")
+        hparams.layers = [layer]
+    if rewrite_module_tmp is not None:
+        if continue_from_run is not None:
+            assert (
+                rewrite_module_tmp == hparams.rewrite_module_tmp
+            ), f"Rewrite module mismatch: specified rewrite module {rewrite_module_tmp} is different from the previous run {hparams.rewrite_module_tmp}"
+        logger.warn(f"Overriding hparams rewrite_module_tmp to {rewrite_module_tmp}")
+        hparams.rewrite_module_tmp = rewrite_module_tmp
+
     if continue_from_run is None:
+        DIR = (
+            RESULTS_DIR
+            / dir_name
+            / hparams.rewrite_module_tmp.split(".")[-1]
+            / f"layer_{hparams.layers[0]}"
+        )
+
         if DIR.exists():
             id_list = [
                 int(str(x).split("_")[-1])
@@ -83,18 +110,9 @@ def main(
             run_id = 0
         run_dir = DIR / f"run_{str(run_id).zfill(3)}"
         run_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info(f"Results will be stored at {run_dir}")
 
-    # Get run hyperparameters
-    params_path = (
-        run_dir / "params.json"
-        if continue_from_run is not None
-        else HPARAMS_DIR / alg_name / hparams_fname
-    )
-    hparams = params_class.from_json(params_path)
-    if layer is not None:
-        logger.warn(f"Overriding hparams layer to {layer}")
-        hparams.layers = [layer]
     if not (run_dir / "params.json").exists():
         # shutil.copyfile(params_path, run_dir / "params.json")
         with open(run_dir / "params.json", "w") as f:
@@ -125,6 +143,7 @@ def main(
         cache_template = (
             KV_DIR
             / f"{model_name.lower().replace('/', '_')}_{alg_name}"
+            / hparams.rewrite_module_tmp.split(".")[-1]
             / f"{ds_name}_layer_{{}}_clamp_{{}}_case_{{}}.npz"
         )
         logger.info(f"Will load cache from {cache_template}")
@@ -314,8 +333,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--layer",
         type=int,
-        default=-1,
+        default=15,
         help="layer to edit. if -1, then will parse layer from the default hparams file",
+    )
+    parser.add_argument(
+        "--rewrite_module_tmp",
+        type=str,
+        default=None,
+        help="the module to use for rewriting. if None, then will parse from the default hparams file",
     )
     parser.set_defaults(skip_generation_tests=False, conserve_memory=False)
     args = parser.parse_args()
@@ -337,4 +362,5 @@ if __name__ == "__main__":
         num_edits=args.num_edits,
         use_cache=args.use_cache,
         layer=args.layer if args.layer != -1 else None,
+        rewrite_module_tmp=args.rewrite_module_tmp,
     )

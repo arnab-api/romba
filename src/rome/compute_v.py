@@ -85,7 +85,7 @@ def compute_v(
     def edit_output_fn(cur_out, cur_layer):
         nonlocal target_init
 
-        if cur_layer == hparams.mlp_module_tmp.format(layer):
+        if cur_layer == hparams.rewrite_module_tmp.format(layer):
             # Store initial value of the vector of interest
             if target_init is None:
                 logger.info("Recording initial value of v*")
@@ -148,6 +148,7 @@ def compute_v(
         kl_loss = hparams.kl_factor * torch.nn.functional.kl_div(
             kl_distr_init, kl_log_probs, log_target=True, reduction="batchmean"
         )
+
         weight_decay = hparams.v_weight_decay * (
             torch.norm(delta) / torch.norm(target_init) ** 2
         )

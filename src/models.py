@@ -81,40 +81,32 @@ class ModelandTokenizer:
             "final_layer_norm_name": None,
             "lm_head_name": None,
         }
-        if (
-            is_mamba_variant(self.model) or "mamba" in self.name.lower()
-        ):  # Not a Transformer
-            fields["n_layer"] = len(determine_layers(self.model))
-            fields["n_embd"] = determine_hidden_size(self.model)
-            prefix = "backbone." if hasattr(self.model, "backbone") else ""
-            fields["layer_name_format"] = prefix + "layers.{}"
-            fields["embedder_name"] = determine_embedding_layer_path(self.model)
-            fields["final_layer_norm_name"] = determine_final_layer_norm_path(
-                self.model
-            )
-            fields["lm_head_name"] = determine_lm_head_path(self.model)
-        else:
+
+        fields["n_layer"] = len(determine_layers(self))
+        fields["n_embd"] = determine_hidden_size(self)
+        fields["embedder_name"] = determine_embedding_layer_path(self)
+        fields["final_layer_norm_name"] = determine_final_layer_norm_path(self)
+        fields["lm_head_name"] = determine_lm_head_path(self)
+        fields["layer_name_format"] = determine_layer_name_format(self)
+
+        if is_mamba_variant(self) == False:
             fields["attn_module_name_format"] = None
             fields["mlp_module_name_format"] = None
             if is_llama_variant(self.model):
-                fields["n_layer"] = model_config.num_hidden_layers
-                fields["n_embd"] = model_config.hidden_size
-                fields["layer_name_format"] = "model.layers.{}"
                 fields["mlp_module_name_format"] = "model.layers.{}.mlp"
                 fields["attn_module_name_format"] = "model.layers.{}.self_attn"
-                fields["embedder_name"] = "model.embed_tokens"
-                fields["final_layer_norm_name"] = "model.norm"
-                fields["lm_head_name"] = "model.lm_head"
 
             elif is_gpt_variant(self.model):
-                fields["n_layer"] = model_config.n_layer
-                fields["n_embd"] = model_config.n_embd
-                fields["layer_name_format"] = "transformer.h.{}"
+                # ! will be a little different for neox models. Ignoring for now
                 fields["mlp_module_name_format"] = "transformer.h.{}.mlp"
                 fields["attn_module_name_format"] = "transformer.h.{}.attn"
-                fields["embedder_name"] = "transformer.wte"
-                fields["final_layer_norm_name"] = "transformer.ln_f"
-                fields["lm_head_name"] = "transformer.lm_head"
+
+            elif is_pythia_variant(self.model):
+                fields["mlp_module_name_format"] = "gpt_neox.layers.{}.mlp"
+                fields["attn_module_name_format"] = "gpt_neox.layers.{}.attention"
+
+            else:
+                logger.error(f"Unknown model type: {type(self.model).__name__}")
 
         if fields["layer_name_format"] is not None and fields["n_layer"] is not None:
             fields["layer_names"] = [
@@ -123,7 +115,9 @@ class ModelandTokenizer:
 
         for key, value in fields.items():
             if value is None:
-                print(f"!!! Warning: {key} could not be set !!!")
+                logger.error(
+                    f"!!! Error ({type(self.model).__name__}): {key} could not be set !!!"
+                )
             setattr(self, key, value)
 
     @property
@@ -371,6 +365,25 @@ def determine_layers(model: ModelandTokenizer | Model) -> tuple[int, ...]:
 from src.utils.typing import Layer, Sequence
 
 
+def determine_layer_name_format(
+    model: ModelandTokenizer | Model,
+) -> str | None:
+    """Determine the format of layer names."""
+    model = unwrap_model(model)
+
+    if is_gpt_variant(model):
+        if isinstance(model, transformers.GPTNeoXForCausalLM):
+            return "gpt_neox.layers.{}"
+        return "transformer.h.{}"
+    elif is_llama_variant(model):
+        return "model.layers.{}"
+    elif is_pythia_variant(model):
+        return "gpt_neox.layers.{}"
+    elif is_mamba_variant(model):
+        prefix = "backbone." if hasattr(model, "backbone") else ""
+        return prefix + "layers.{}"
+
+
 @overload
 def determine_layer_paths(
     model: ModelandTokenizer | Model,
@@ -420,6 +433,7 @@ def determine_layer_paths(
     assert isinstance(model, Model), type(model)
 
     layer_paths: dict[Layer, str] = {}
+    layer_name_format = determine_layer_name_format(model)
     for layer in layers:
         if layer == "emb":
             layer_paths[layer] = determine_embedding_layer_path(model)
@@ -432,16 +446,7 @@ def determine_layer_paths(
         if layer_index < 0:
             layer_index = len(determine_layers(model)) + layer
 
-        if isinstance(model, transformers.GPTNeoXForCausalLM):
-            layer_path = f"gpt_neox.layers.{layer_index}"
-        elif isinstance(model, transformers.LlamaForCausalLM):
-            layer_path = f"model.layers.{layer_index}"
-        elif isinstance(model, Mamba):
-            prefix = "backbone." if hasattr(model, "backbone") else ""
-            layer_path = prefix + f"layers.{layer_index}"
-        else:
-            layer_path = f"transformer.h.{layer_index}"
-        layer_paths[layer] = layer_path
+        layer_paths[layer] = layer_name_format.format(layer_index)
 
     return layer_paths if return_dict else tuple(layer_paths[la] for la in layers)
 

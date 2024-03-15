@@ -274,7 +274,7 @@ def get_context_templates(
     mt: ModelandTokenizer, length_params: list[tuple]
 ) -> list[str]:
     global CONTEXT_TEMPLATES_CACHE
-
+    # CONTEXT_TEMPLATES_CACHE = None
     if CONTEXT_TEMPLATES_CACHE is None:
         CONTEXT_TEMPLATES_CACHE = ["{}"] + [
             x + ". {}"
