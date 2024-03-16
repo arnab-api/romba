@@ -99,6 +99,8 @@ def mamba_generate(
         unicodedata.normalize("NFKD", x)
         .replace("\n\n", " ")
         .replace("<|endoftext|>", "")
+        .replace("{", "")
+        .replace("}", "")
         for x in txt
     ]
     functional.free_gpu_cache()
@@ -128,6 +130,8 @@ def generate_one_by_one(
         unicodedata.normalize("NFKD", x)
         .replace("\n\n", " ")
         .replace("<|endoftext|>", "")
+        .replace("{", "")
+        .replace("}", "")
         for x in txt
     ]
     functional.free_gpu_cache()
@@ -223,6 +227,8 @@ def transformer_generate(
         unicodedata.normalize("NFKD", x)
         .replace("\n\n", " ")
         .replace("<|endoftext|>", "")
+        .replace("{", "")
+        .replace("}", "")
         for x in txt
     ]
     functional.free_gpu_cache()
