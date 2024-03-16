@@ -41,17 +41,17 @@ class ModelandTokenizer:
                     "EleutherAI/gpt-neox-20b",  # Mamba was trained on the Pile with this exact tokenizer
                 )
             else:
-                model, tokenizer = (
-                    AutoModelForCausalLM.from_pretrained(
-                        model_path,
-                        low_cpu_mem_usage=True,
-                        torch_dtype=torch_dtype,
-                    ).to(device),
-                    AutoTokenizer.from_pretrained(
-                        model_path,
-                        # padding_side='left'
-                    ),
+                model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    low_cpu_mem_usage=True,
+                    # torch_dtype=torch_dtype,
+                ).to(device)
+
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_path,
+                    # padding_side='left'
                 )
+
             tokenizer.pad_token = tokenizer.eos_token
             model.eval()
             logger.info(
@@ -456,8 +456,7 @@ def determine_hidden_size(model: ModelandTokenizer | Model) -> int:
     model = unwrap_model(model)
 
     if isinstance(model, Mamba):
-        prefix = "backbone." if hasattr(model, "backbone") else ""
-        embed = baukit.get_module(model, prefix + "embedding")
+        embed = baukit.get_module(model, determine_embedding_layer_path(model))
         return embed.weight.shape[-1]
 
     return model.config.hidden_size

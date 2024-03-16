@@ -14,6 +14,8 @@ from mamba_minimal.model import Mamba
 # official implementation, superfast
 # from mamba.mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba
 
+# huggingface implementation
+# from transformers import MambaForCausalLM as Mamba
 
 ArrayLike = list | tuple | numpy.ndarray | torch.Tensor
 PathLike = str | pathlib.Path
