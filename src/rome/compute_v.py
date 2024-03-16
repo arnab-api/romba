@@ -76,9 +76,18 @@ def compute_v(
     # Set up an optimization over a latent vector that, when output at the
     # rewrite layer, i.e. hypothesized fact lookup location, will induce the
     # target token to be predicted at the final layer.
-    delta = torch.zeros(
-        (determine_hidden_size(model),), requires_grad=True, device=mt.device
-    )
+    # delta = torch.zeros(
+    #     (determine_hidden_size(model),), requires_grad=True, device=mt.device
+    # )
+    rewrite_module = nethook.get_module(model, hparams.rewrite_module_tmp.format(layer))
+    right_vector_shape = rewrite_module.weight.shape[0]
+    left_vector_shape = rewrite_module.weight.shape[1]
+    print(f"{right_vector_shape=} | {left_vector_shape=}")
+
+    if hparams.mamba_block_residual:
+        right_vector_shape //= 2
+
+    delta = torch.zeros((right_vector_shape,), requires_grad=True, device=mt.device)
     target_init, kl_distr_init = None, None
 
     # Inserts new "delta" variable at the appropriate part of the computation
@@ -90,16 +99,22 @@ def compute_v(
             if target_init is None:
                 logger.info("Recording initial value of v*")
                 # Initial value is recorded for the clean sentence
-                target_init = cur_out[0, lookup_idxs[0]].detach().clone()
+                target_init = (
+                    cur_out[0, lookup_idxs[0]][-delta.shape[0] :].detach().clone()
+                )
 
+            if hparams.mamba_block_residual:
+                # this is specifically for the output of
+                assert cur_layer.endswith("mixer.in_proj")
             for i, idx in enumerate(lookup_idxs):
-                cur_out[i, idx, :] += delta
+                cur_out[i, idx, :][-delta.shape[0] :] += delta
 
         return cur_out
 
     # Optimizer
     opt = torch.optim.Adam([delta], lr=hparams.v_lr)
     nethook.set_requires_grad(False, model)
+    logger.debug(f"Optimizing delta of shape {delta.shape} at layer {layer}")
 
     # Execute optimization
     for it in range(hparams.v_num_grad_steps):
@@ -198,6 +213,12 @@ def compute_v(
         module_template=hparams.rewrite_module_tmp,
         fact_token_strategy=hparams.fact_token,
     )
+
+    if hparams.mamba_block_residual:
+        n_embd_times_2 = determine_hidden_size(mt.model) * 2
+        ssm_input, cur_output = cur_output.split(
+            split_size=[n_embd_times_2, n_embd_times_2], dim=-1
+        )
 
     # Solving the linear system to compute the right vector
     right_vector = (target - cur_output) / torch.dot(cur_input, left_vector)

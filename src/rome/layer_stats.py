@@ -53,6 +53,7 @@ def main():
     )
     aa("--dataset", default="wikipedia", choices=["wikitext", "wikipedia"])
     aa("--layers", default=[17], type=lambda x: list(map(int, x.split(","))))
+    aa("--layer_name_format", type=str, default=None)
     aa("--to_collect", default=["mom2"], type=lambda x: x.split(","))
     aa("--sample_size", default=100000, type=lambda x: None if x == "all" else int(x))
     aa("--batch_tokens", default=None, type=lambda x: None if x == "any" else int(x))
@@ -78,14 +79,17 @@ def main():
             "or equivalently the outputs of the first MLP layer."
         )
 
-        if models.is_mamba_variant(mt):
-            # TODO(arnab): This will change for different hooks inside the MambaBlock
-            layer_name = mt.layer_name_format.format(layer_num) + ".mixer.out_proj"
+        if args.layer_name_format is None:
+            if models.is_mamba_variant(mt):
+                # TODO(arnab): This will change for different hooks inside the MambaBlock
+                layer_name = mt.layer_name_format.format(layer_num) + ".mixer.out_proj"
+            else:
+                proj_layer_name = "c_proj" if "gpt2" in mt.name.lower() else "fc_out"
+                layer_name = (
+                    mt.mlp_module_name_format.format(layer_num) + f".{proj_layer_name}"
+                )
         else:
-            proj_layer_name = "c_proj" if "gpt2" in mt.name.lower() else "fc_out"
-            layer_name = (
-                mt.mlp_module_name_format.format(layer_num) + f".{proj_layer_name}"
-            )
+            layer_name = args.layer_name_format.format(layer_num)
 
         layer_stats(
             mt,
