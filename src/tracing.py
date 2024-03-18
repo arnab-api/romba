@@ -42,6 +42,7 @@ def trace_with_patch(
     ] = None,  # what to patch in the corrupted run in the MambaBlock. If None => Patch the whole residual block (Not MambaBlock output)
     alt_subj_patching: bool = False,  # If True, will assume inp shape to be (2, L). Uncorrupted activations with inp[0] will be patched in the run with inp[1]. Will not corrupt the embeddings
 ):
+    # print(f"{alt_subj_patching=}")
     """
     Runs a single causal trace.  Given a model and a batch input where
     the batch size is at least two, runs the batch in inference, corrupting
@@ -155,7 +156,7 @@ def trace_with_patch(
             )  # only the first input for the uncorrputed run
 
         # ------------------------------------------------------
-        # Corrupted run
+        # Corrupted run with patching
         mt.reset_forward()  # reset the model to use default forward functions
 
         for layer in patch_layers:
@@ -246,6 +247,7 @@ def calculate_hidden_flow(
             noise=noise,
             uniform_noise=uniform_noise,
             mamba_block_hook=None,  # don't need to patch for calculating the low score
+            alt_subj_patching=alt_subject is not None,
         ).item()
     else:
         if "{}" in prompt:
@@ -275,10 +277,8 @@ def calculate_hidden_flow(
         assert subject_range[1] == alt_subj_range[1]
         e_range = (min(subject_range[0], alt_subj_range[0]), subject_range[1])
 
-        if isinstance(mt.model, Mamba):
-            inp.pop("attention_mask")
         with torch.no_grad():
-            outputs = mt.model(**inp)
+            outputs = mt(**inp)
         logits = outputs.logits[:, -1] if hasattr(outputs, "logits") else outputs[:, -1]
         next_token_probs = logits.float().softmax(dim=-1)
         answer_t = next_token_probs[0].argmax(dim=-1)
@@ -300,6 +300,7 @@ def calculate_hidden_flow(
             replace=replace,
             token_range=token_range,
             mamba_block_hook=mamba_block_hook,
+            alt_subj_patching=alt_subject is not None,
         )
     else:
         if isinstance(mt.model, Mamba):
@@ -322,6 +323,7 @@ def calculate_hidden_flow(
             window=window,
             token_range=token_range,
             mamba_block_hook=mamba_block_hook,
+            alt_subj_patching=alt_subject is not None,
         )
     differences = differences.detach().cpu()
     indirect_effect = dict(
@@ -362,6 +364,7 @@ def trace_important_states(
     replace=False,
     token_range=None,
     mamba_block_hook: Optional[MambaBlock_Hook_Points] = None,
+    alt_subj_patching: bool = False,
 ):
     ntoks = inp["input_ids"].shape[1]
     table = []
@@ -381,6 +384,7 @@ def trace_important_states(
                 uniform_noise=uniform_noise,
                 replace=replace,
                 mamba_block_hook=mamba_block_hook,
+                alt_subj_patching=alt_subj_patching,
             )
             row.append(r)
         table.append(torch.stack(row))
@@ -399,6 +403,7 @@ def trace_important_window(
     replace=False,
     token_range=None,
     mamba_block_hook: Optional[MambaBlock_Hook_Points] = None,
+    alt_subj_patching: bool = False,
 ):
     ntoks = inp["input_ids"].shape[1]
     table = []
@@ -424,6 +429,7 @@ def trace_important_window(
                 uniform_noise=uniform_noise,
                 replace=replace,
                 mamba_block_hook=mamba_block_hook,
+                alt_subj_patching=alt_subj_patching,
             )
             row.append(r)
         table.append(torch.stack(row))
