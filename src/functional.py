@@ -16,7 +16,7 @@ from transformers import AutoTokenizer
 from mamba_minimal.model import Mamba
 from src import models
 from src import tokens as tokenization_utils
-from src.data.dataclasses import PredictedToken, Relation, RelationSample
+from src.dataset.dataclasses import PredictedToken, Relation, RelationSample
 from src.models import ModelandTokenizer
 from src.utils.typing import Layer
 

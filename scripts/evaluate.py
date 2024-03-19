@@ -12,7 +12,7 @@ from scripts.py.eval_utils_counterfact import compute_rewrite_quality_counterfac
 
 # from scripts.py.eval_utils_zsre import compute_rewrite_quality_zsre
 from src import functional, models
-from src.data.rome_dataclasses import (  # MENDQADataset,; MultiCounterFactDataset,
+from src.dataset.rome_dataclasses import (  # MENDQADataset,; MultiCounterFactDataset,
     AttributeSnippets,
     CounterFactDataset,
     get_tfidf_vectorizer,

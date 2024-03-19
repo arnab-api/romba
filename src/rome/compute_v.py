@@ -125,7 +125,7 @@ def compute_v(
                     .clone()
                 )
             for i, idx in enumerate(lookup_idxs):
-                cur_out[i, idx, :][v_insert_range[0] : v_insert_range[1]] += delta
+                cur_out[i, idx, v_insert_range[0] : v_insert_range[1]] += delta
 
         return cur_out
 

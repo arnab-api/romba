@@ -13,7 +13,7 @@ import scipy
 import torch
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-from src.data.rome_dataclasses import AttributeSnippets
+from src.dataset.rome_dataclasses import AttributeSnippets
 from src.models import ModelandTokenizer
 from src.rome_utils.perplexity import perplexity
 from src.utils.generation import generate_fast

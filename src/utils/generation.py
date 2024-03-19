@@ -8,7 +8,7 @@ import torch
 
 import src.tokens as tokenization_utils
 from src import functional, models
-from src.data.dataclasses import PredictedToken, Relation
+from src.dataset.dataclasses import PredictedToken, Relation
 from src.utils.typing import Layer
 
 

@@ -14,7 +14,7 @@ import src.tokens as tokenizer_utils
 
 # from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as Mamba
 from mamba_minimal.model import Mamba
-from src import data, functional
+from src import dataset, functional
 from src.functional import (
     decode_tokens,
     find_token_range,
@@ -436,7 +436,11 @@ def trace_important_window(
     return torch.stack(table)
 
 
-from src.data.dataclasses import PredictedToken, RelationSample, ReprReplacementResults
+from src.dataset.dataclasses import (
+    PredictedToken,
+    RelationSample,
+    ReprReplacementResults,
+)
 from src.functional import get_h, patch_repr, predict_next_token
 from src.models import ModelandTokenizer
 
