@@ -110,12 +110,19 @@ def apply_rome_to_model(
 
     for request in requests:
         deltas = get_kv_deltas(mt, request, hparams, cache_template)
+        w_name, (delta_k, delta_v) = list(deltas.items())[0]
+        v_shape = delta_v.shape[0]
+        v_insert_range = (0, v_shape)
+        if hparams.mamba_block_non_ssm:
+            v_insert_range = (v_shape, v_shape * 2)
 
         with torch.no_grad():
-            w_name, (delta_k, delta_v) = list(deltas.items())[0]
             weights = nethook.get_parameter(mt.model, w_name)
-            if hparams.mamba_block_non_ssm:
-                weights = weights[weights.shape[0] // 2 :]
+            logger.debug(f"{w_name=} | {weights.shape=}")
+            weights = weights[v_insert_range[0] : v_insert_range[1]]
+            logger.debug(
+                f"rewriting slice [{v_insert_range[0]}:{v_insert_range[1]}] | {weights.shape=}"
+            )
             upd_matrix = delta_k.unsqueeze(1) @ delta_v.unsqueeze(0)
             upd_matrix = upd_matrix_match_shape(upd_matrix, weights.shape)
             weights[...] += upd_matrix

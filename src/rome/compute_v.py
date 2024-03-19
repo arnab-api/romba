@@ -7,7 +7,8 @@ import torch
 from matplotlib.style import context
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from src.models import ModelandTokenizer, determine_hidden_size
+from src import functional
+from src.models import ModelandTokenizer, determine_hidden_size, is_mamba_variant
 from src.rome import repr_tools
 
 from .rome_hparams import ROMEHyperParams
@@ -27,6 +28,16 @@ def compute_v(
     Computes the value (right) vector for the rank-1 update.
     Runs a simple optimization procedure.
     """
+    assert (
+        hparams.mamba_block_non_ssm + hparams.mamba_block_ssm <= 1
+    ), "Can't calculate v for both SSM and non-SSM dataflow. Please select only one (or none)"
+    if hparams.mamba_block_non_ssm or hparams.mamba_block_ssm:
+        assert is_mamba_variant(
+            mt.model
+        ), "Model needs to be a Mamba variant. with when ssm or non_ssm set to true"
+        assert hparams.rewrite_module_tmp.format(layer).endswith(
+            "mixer.in_proj"
+        ), "When ssm or non_ssm is set to true, the rewrite layer should be the in_proj layer of the mixer block"
 
     logger.info("Computing right vector (v)")
 
@@ -93,6 +104,10 @@ def compute_v(
     delta = torch.zeros((right_vector_shape,), requires_grad=True, device=mt.device)
     target_init, kl_distr_init = None, None
 
+    v_insert_range = (0, right_vector_shape)
+    if hparams.mamba_block_non_ssm:
+        v_insert_range = (right_vector_shape, right_vector_shape * 2)
+
     # Inserts new "delta" variable at the appropriate part of the computation
     def edit_output_fn(cur_out, cur_layer):
         nonlocal target_init
@@ -103,14 +118,14 @@ def compute_v(
                 logger.info("Recording initial value of v*")
                 # Initial value is recorded for the clean sentence
                 target_init = (
-                    cur_out[0, lookup_idxs[0]][-delta.shape[0] :].detach().clone()
+                    cur_out[0, lookup_idxs[0]][
+                        v_insert_range[0] : v_insert_range[1]
+                    ]  # only for the first prompt
+                    .detach()
+                    .clone()
                 )
-
-            if hparams.mamba_block_non_ssm:
-                # this is specifically for the output of
-                assert cur_layer.endswith("mixer.in_proj")
             for i, idx in enumerate(lookup_idxs):
-                cur_out[i, idx, :][-delta.shape[0] :] += delta
+                cur_out[i, idx, :][v_insert_range[0] : v_insert_range[1]] += delta
 
         return cur_out
 
@@ -183,7 +198,7 @@ def compute_v(
         if it == hparams.v_num_grad_steps - 1:
             break
 
-        if it > 12 and avg_prob > 0.95:
+        if it > 12 and avg_prob > 0.90:
             break
 
         # Backpropagate
@@ -200,6 +215,7 @@ def compute_v(
 
     # zero out the grads so that they don't accumulate and consume extra memory
     mt.model.zero_grad(set_to_none=True)
+    functional.free_gpu_cache()
 
     if left_vector is None:
         logger.warning("No left vector provided. right vector ins't normalized")
@@ -217,11 +233,15 @@ def compute_v(
         fact_token_strategy=hparams.fact_token,
     )
 
-    if hparams.mamba_block_non_ssm:
+    if hparams.mamba_block_non_ssm or hparams.mamba_block_ssm:
         n_embd_times_2 = determine_hidden_size(mt.model) * 2
-        ssm_input, cur_output = cur_output.split(
+        ssm_input, non_ssm_input = cur_output.split(
             split_size=[n_embd_times_2, n_embd_times_2], dim=-1
         )
+        if hparams.mamba_block_ssm:
+            cur_output = ssm_input
+        else:
+            cur_output = non_ssm_input
 
     # Solving the linear system to compute the right vector
     right_vector = (target - cur_output) / torch.dot(cur_input, left_vector)
