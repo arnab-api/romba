@@ -140,10 +140,16 @@ def main(
     # Get cache templates
     cache_template = None
     if use_cache:
+        cache_v_dir_name = hparams.rewrite_module_tmp.split(".")[-1]
+        if hparams.mamba_block_non_ssm:
+            cache_v_dir_name += "_non_ssm"
+        if hparams.mamba_block_ssm:
+            cache_v_dir_name += "_ssm"
         cache_template = (
             KV_DIR
-            / f"{model_name.lower().replace('/', '_')}_{alg_name}"
-            / hparams.rewrite_module_tmp.split(".")[-1]
+            / f"{model_name.lower().replace('/', '_')}"
+            / f"{alg_name}"
+            / f"{cache_v_dir_name}"
             / f"{ds_name}_layer_{{}}_clamp_{{}}_case_{{}}.npz"
         )
         logger.info(f"Will load cache from {cache_template}")
@@ -264,10 +270,11 @@ if __name__ == "__main__":
         "--model_name",
         choices=[
             "state-spaces/mamba-2.8b-slimpj",
-            "gpt2-medium",
-            "gpt2-large",
-            "gpt2-xl",
-            "EleutherAI/gpt-j-6B",
+            "EleutherAI/pythia-2.8b-deduped",
+            # "gpt2-medium",
+            # "gpt2-large",
+            # "gpt2-xl",
+            # "EleutherAI/gpt-j-6B",
         ],
         default="state-spaces/mamba-2.8b-slimpj",
         help="Model to edit.",

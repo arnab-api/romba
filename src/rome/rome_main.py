@@ -8,10 +8,9 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src.functional import free_gpu_cache
-from src.models import ModelandTokenizer
+from src.models import ModelandTokenizer, determine_hidden_size
 from src.rome_utils import nethook
 from src.utils.generation import generate_fast
-from src.models import determine_hidden_size
 
 from .compute_u import compute_u
 from .compute_v import compute_v
@@ -115,7 +114,7 @@ def apply_rome_to_model(
         with torch.no_grad():
             w_name, (delta_k, delta_v) = list(deltas.items())[0]
             weights = nethook.get_parameter(mt.model, w_name)
-            if hparams.mamba_block_residual:
+            if hparams.mamba_block_non_ssm:
                 weights = weights[weights.shape[0] // 2 :]
             upd_matrix = delta_k.unsqueeze(1) @ delta_v.unsqueeze(0)
             upd_matrix = upd_matrix_match_shape(upd_matrix, weights.shape)

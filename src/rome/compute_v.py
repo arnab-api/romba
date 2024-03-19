@@ -82,10 +82,13 @@ def compute_v(
     rewrite_module = nethook.get_module(model, hparams.rewrite_module_tmp.format(layer))
     right_vector_shape = rewrite_module.weight.shape[0]
     left_vector_shape = rewrite_module.weight.shape[1]
-    print(f"{right_vector_shape=} | {left_vector_shape=}")
 
-    if hparams.mamba_block_residual:
+    if hparams.mamba_block_non_ssm or hparams.mamba_block_ssm:
         right_vector_shape //= 2
+
+    logger.debug(
+        f"right_vector(v) shape = {right_vector_shape} | left_vector(k) shape = {left_vector_shape}"
+    )
 
     delta = torch.zeros((right_vector_shape,), requires_grad=True, device=mt.device)
     target_init, kl_distr_init = None, None
@@ -103,7 +106,7 @@ def compute_v(
                     cur_out[0, lookup_idxs[0]][-delta.shape[0] :].detach().clone()
                 )
 
-            if hparams.mamba_block_residual:
+            if hparams.mamba_block_non_ssm:
                 # this is specifically for the output of
                 assert cur_layer.endswith("mixer.in_proj")
             for i, idx in enumerate(lookup_idxs):
@@ -214,7 +217,7 @@ def compute_v(
         fact_token_strategy=hparams.fact_token,
     )
 
-    if hparams.mamba_block_residual:
+    if hparams.mamba_block_non_ssm:
         n_embd_times_2 = determine_hidden_size(mt.model) * 2
         ssm_input, cur_output = cur_output.split(
             split_size=[n_embd_times_2, n_embd_times_2], dim=-1

@@ -32,4 +32,5 @@ class ROMEHyperParams(HyperParams):
     mom2_dtype: str
 
     # Mamba Specific
-    mamba_block_residual: bool = False
+    mamba_block_non_ssm: bool = False
+    mamba_block_ssm: bool = False

@@ -49,7 +49,12 @@ def main():
     aa(
         "--model_name",
         default="gpt2-xl",
-        choices=["gpt2-xl", "EleutherAI/gpt-j-6B", "state-spaces/mamba-2.8b-slimpj"],
+        choices=[
+            "gpt2-xl",
+            "EleutherAI/gpt-j-6B",
+            "state-spaces/mamba-2.8b-slimpj",
+            "EleutherAI/pythia-2.8b-deduped",
+        ],
     )
     aa("--dataset", default="wikipedia", choices=["wikitext", "wikipedia"])
     aa("--layers", default=[17], type=lambda x: list(map(int, x.split(","))))
@@ -126,7 +131,11 @@ def layer_stats(
             ds_name,
             dict(wikitext="wikitext-103-raw-v1", wikipedia="20220301.en")[ds_name],
         )
-        maxlen = model.config.n_positions if hasattr(model, "config") else 2048
+        # maxlen = model.config.n_positions if hasattr(model, "config") else 2048
+        try:
+            maxlen = mt.model.config.n_positions
+        except:
+            maxlen = 2048
         if batch_tokens is not None and batch_tokens < maxlen:
             maxlen = batch_tokens
         return TokenizedDataset(raw_ds["train"], tokenizer, maxlen=maxlen)
@@ -137,7 +146,11 @@ def layer_stats(
     model, tokenizer = mt.model, mt.tokenizer
     # Continue with computation of statistics
     batch_size = 100  # Examine this many dataset texts at once
-    npos = model.config.n_positions if hasattr(model, "config") else 2048
+    try:
+        npos = model.config.n_positions
+    except:
+        npos = 2048
+    logger.debug(f"context length set to {npos} tokens.")
     if batch_tokens is None:
         batch_tokens = npos * 3  # Sort and divide into batches with this many tokens
     if precision is None:
