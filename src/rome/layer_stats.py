@@ -52,7 +52,7 @@ def main():
         choices=[
             "gpt2-xl",
             "EleutherAI/gpt-j-6B",
-            "state-spaces/mamba-2.8b-slimpj",
+            "state-spaces/mamba-2.8b",
             "EleutherAI/pythia-2.8b-deduped",
         ],
     )

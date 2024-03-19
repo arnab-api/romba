@@ -269,7 +269,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_name",
         choices=[
-            "state-spaces/mamba-2.8b-slimpj",
+            "state-spaces/mamba-2.8b",
             "EleutherAI/pythia-2.8b-deduped",
             # "gpt2-medium",
             # "gpt2-large",
