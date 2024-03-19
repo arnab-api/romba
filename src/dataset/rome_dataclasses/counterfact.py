@@ -36,6 +36,9 @@ class CounterFactDataset(Dataset):
 
         print(f"Loaded dataset with {len(self)} elements")
 
+    def set_data(self, data):
+        self.data = data
+
     def __len__(self):
         return len(self.data)
 

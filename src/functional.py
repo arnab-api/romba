@@ -9,6 +9,7 @@ from typing import Any, Callable, Literal, Optional, Union
 
 import baukit
 import torch
+from tqdm.auto import tqdm
 
 # from mamba_ssm.models.mixer_seq_simple import MambaLMHeadModel as MambaLMHeadModel
 from transformers import AutoTokenizer
@@ -506,3 +507,41 @@ def random_edit_targets(
             continue
         targets[sample] = random.choice(others)
     return targets
+
+
+from src.dataset.rome_dataclasses import CounterFactDataset
+
+
+@torch.inference_mode()
+def filter_counterfact_samples_by_model_knowledge(
+    mt: ModelandTokenizer, counterfact: CounterFactDataset, limit: Optional[int] = None
+) -> list:
+    """Filter samples by model knowledge."""
+
+    filtered_samples = []
+    progress = tqdm(range(len(counterfact)))
+    for idx in progress:
+        sample = counterfact[idx]
+        subject = sample["requested_rewrite"]["subject"]
+        prompt_template = sample["requested_rewrite"]["prompt"]
+        question = prompt_template.format(subject)
+        answer = sample["requested_rewrite"]["target_true"]["str"]
+        predictions = predict_next_token(mt, question, k=5)[0]
+        top_pred = predictions[0]
+        is_known = is_nontrivial_prefix(prediction=top_pred.token, target=answer)
+
+        logger.debug(
+            f"{question} -> {answer=} | predicted = '{top_pred.token}'({top_pred.prob:.3f}) ==> ({get_tick_marker(is_known)})"
+        )
+
+        if is_known:
+            filtered_samples.append(sample)
+
+        progress.set_description(f"known={len(filtered_samples)}/{idx+1}")
+
+        if limit is not None and len(filtered_samples) >= limit:
+            break
+
+    logger.info(f"filtered to {len(filtered_samples)} samples / {len(counterfact)}")
+
+    return filtered_samples
