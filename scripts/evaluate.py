@@ -159,7 +159,7 @@ def main(
             cache_v_dir_name += "_ssm"
         cache_template = (
             KV_DIR
-            / f"{model_name.lower().replace('/', '_')}"
+            / model_name.split("/")[-1]
             / f"{alg_name}"
             / f"{cache_v_dir_name}"
             / f"{ds_name}_layer_{{}}_clamp_{{}}_case_{{}}.npz"
