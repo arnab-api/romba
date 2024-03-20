@@ -96,6 +96,7 @@ def main(
         DIR = (
             RESULTS_DIR
             / dir_name
+            / model_name.split("/")[-1]
             / hparams.rewrite_module_tmp.split(".")[-1]
             / f"layer_{hparams.layers[0]}"
         )
