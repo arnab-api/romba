@@ -353,7 +353,7 @@ def make_icl_prompt(
 
 @torch.inference_mode()
 def filter_samples_by_model_knowledge(
-    mt: ModelandTokenizer, relation: Relation
+    mt: ModelandTokenizer, relation: Relation, limit: Optional[int] = None
 ) -> Relation:
     """Filter samples by model knowledge."""
     logger.debug(f'"{relation.name}" | filtering with {mt.name}')
@@ -365,12 +365,14 @@ def filter_samples_by_model_knowledge(
         top_pred = predictions[0]
         is_known = is_nontrivial_prefix(prediction=top_pred.token, target=answer)
         sample = relation.samples[i]
-        if is_known:
-            filtered_samples.append(sample)
 
         logger.debug(
             f"{sample.subject=} -> {answer=} | predicted = '{top_pred.token}'({top_pred.prob:.3f}) ==> ({get_tick_marker(is_known)})"
         )
+        if is_known:
+            filtered_samples.append(sample)
+        if limit is not None and len(filtered_samples) >= limit:
+            break
 
     logger.info(
         f'filtered relation "{relation.name}" to {len(filtered_samples)} samples (with {len(relation._few_shot_samples)}-shots)'

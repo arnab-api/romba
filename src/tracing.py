@@ -95,9 +95,9 @@ def trace_with_patch(
         noise_fn = noise
 
     def patch_rep(repr, layer):
-        if layer == embed_layername and alt_subj_patching == False:
+        if layer == embed_layername:
             # If requested, we corrupt a range of token embeddings on batch items x[1:]
-            if tokens_to_mix is not None:
+            if tokens_to_mix is not None and alt_subj_patching == False:
                 b, e = tokens_to_mix
                 noise_data = noise_fn(
                     torch.from_numpy(prng(repr.shape[0] - 1, e - b, repr.shape[2]))
@@ -575,6 +575,7 @@ def calculate_average_indirect_effects(
     corruption_strategy: Literal["corrupt", "alt_patch"] = "alt_patch",
     n_trials: int | None = None,
     save_path: str | None = None,
+    verbose: bool = False,
     **kwargs,
 ):
     indirect_effect_collection = {}
@@ -585,6 +586,11 @@ def calculate_average_indirect_effects(
         alt_subject = None
         if corruption_strategy == "alt_patch":
             alt_subject = edit_targets[sample].subject
+
+        if verbose:
+            logger.debug(
+                f"tracing for {sample.subject} => {alt_subject if alt_subject else '*corrupted*'} state"
+            )
         indirect_effects = calculate_hidden_flow(
             mt=mt,
             prompt=prompt,
@@ -597,6 +603,7 @@ def calculate_average_indirect_effects(
         )
 
         if save_path is not None:
+            # make sure save after each trial
             with open(save_path, "w") as f:
                 json.dump(indirect_effect_collection, f)
 
