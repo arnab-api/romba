@@ -51,12 +51,13 @@ def main(
     model_name: Union[str, ModelandTokenizer],
     hparams_fname: str,
     ds_name: str,
-    dataset_size_limit: int,
-    continue_from_run: str,
-    skip_generation_tests: bool,
-    generation_test_interval: int,
-    conserve_memory: bool,
     dir_name: str,
+    datafile: Optional[str] = None,
+    dataset_size_limit: Optional[int] = None,
+    continue_from_run: Optional[str] = None,
+    skip_generation_tests: Optional[bool] = False,
+    generation_test_interval: int = 1,
+    conserve_memory: bool = True,
     num_edits: int = 1,
     use_cache: bool = False,
     layer: Optional[int] = None,
@@ -98,13 +99,13 @@ def main(
             / hparams.rewrite_module_tmp.split(".")[-1]
             / f"layer_{hparams.layers[0]}"
         )
-
         if DIR.exists():
             id_list = [
                 int(str(x).split("_")[-1])
                 for x in DIR.iterdir()
-                if str(x).split("_")[-1].isnumeric() and str(x).startswith("run_")
+                if str(x).split("_")[-1].isnumeric()  # and str(x).startswith("run_")
             ]
+            # print("id_list: ", id_list)
             run_id = 0 if not id_list else max(id_list) + 1
         else:
             run_id = 0
@@ -112,6 +113,8 @@ def main(
         run_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"Results will be stored at {run_dir}")
+
+    # raise NotImplementedError("Need to fix the following code")
 
     if not (run_dir / "params.json").exists():
         # shutil.copyfile(params_path, run_dir / "params.json")
@@ -135,7 +138,15 @@ def main(
         assert ds_name != "cf", f"{ds_name} does not support multiple edits"
 
     ds_class, ds_eval_method = DS_DICT[ds_name]
-    ds = ds_class(DATA_DIR, tok=mt.tokenizer, size=dataset_size_limit)
+    if datafile is None:
+        ds = ds_class(DATA_DIR, tok=mt.tokenizer, size=dataset_size_limit)
+    else:
+        ds = ds_class(
+            data_dir=datafile,
+            size=dataset_size_limit,
+            absolute_path=True,
+            tok=mt.tokenizer,
+        )
 
     # Get cache templates
     cache_template = None
@@ -299,6 +310,14 @@ if __name__ == "__main__":
         default=None,
         help="If continuing from previous run, set to run_id. Otherwise, leave as None.",
     )
+
+    parser.add_argument(
+        "--datafile",
+        type=str,
+        default=None,
+        help="Absolute path to the data file. If None, will use the default data file.",
+    )
+
     parser.add_argument(
         "--dataset_size_limit",
         type=int,
@@ -360,6 +379,7 @@ if __name__ == "__main__":
         model_name=args.model_name,
         hparams_fname=args.hparams_fname,
         ds_name=args.ds_name,
+        datafile=args.datafile,
         dataset_size_limit=args.dataset_size_limit,
         continue_from_run=args.continue_from_run,
         skip_generation_tests=args.skip_generation_tests,

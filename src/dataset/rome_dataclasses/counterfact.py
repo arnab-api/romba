@@ -16,18 +16,24 @@ class CounterFactDataset(Dataset):
         data_dir: str,
         multi: bool = False,
         size: typing.Optional[int] = None,
+        absolute_path: bool = False,
         *args,
         **kwargs,
     ):
-        data_dir = Path(data_dir)
-        cf_loc = data_dir / (
-            "counterfact.json" if not multi else "multi_counterfact.json"
-        )
-        if not cf_loc.exists():
-            remote_url = f"{REMOTE_ROOT}/{'multi_' if multi else ''}counterfact.json"
-            print(f"{cf_loc} does not exist. Downloading from {remote_url}")
-            data_dir.mkdir(exist_ok=True, parents=True)
-            torch.hub.download_url_to_file(remote_url, cf_loc)
+        if not absolute_path:
+            data_dir = Path(data_dir)
+            cf_loc = data_dir / (
+                "counterfact.json" if not multi else "multi_counterfact.json"
+            )
+            if not cf_loc.exists():
+                remote_url = (
+                    f"{REMOTE_ROOT}/{'multi_' if multi else ''}counterfact.json"
+                )
+                print(f"{cf_loc} does not exist. Downloading from {remote_url}")
+                data_dir.mkdir(exist_ok=True, parents=True)
+                torch.hub.download_url_to_file(remote_url, cf_loc)
+        else:
+            cf_loc = data_dir
 
         with open(cf_loc, "r") as f:
             self.data = json.load(f)
