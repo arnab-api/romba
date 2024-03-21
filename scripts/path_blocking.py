@@ -378,6 +378,7 @@ def run_ablation_experiment(
         "company_hq",
         "person_native_language",
         "landmark_in_country",
+        "product_by_company",
     ],
 ):
     mt = ModelandTokenizer(model_path=model_path)
@@ -395,7 +396,7 @@ def run_ablation_experiment(
         relation = filter_samples_by_model_knowledge(
             mt=mt,
             relation=relation,
-            # limit=trials_per_relation,
+            limit=trials_per_relation if trials_per_relation > 50 else None,
         )
 
         edit_targets = functional.random_edit_targets(samples=relation.samples)

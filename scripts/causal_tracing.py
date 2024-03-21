@@ -27,6 +27,7 @@ def causal_trace_relations(
         "company_hq",
         "person_native_language",
         "landmark_in_country",
+        "product_by_company",
     ],
     hook: Optional[str] = None,
 ):
@@ -46,7 +47,7 @@ def causal_trace_relations(
         relation = filter_samples_by_model_knowledge(
             mt=mt,
             relation=relation,
-            # limit=trials_per_relation,
+            limit=trials_per_relation if trials_per_relation > 50 else None,
         )
 
         relation_save_path = os.path.join(results_dir, f"{relation_name}.json")
