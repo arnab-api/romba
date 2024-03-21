@@ -78,7 +78,15 @@ if __name__ == "__main__":
     )
     parser.add_argument("--n_trial", type=int, default=None)
     parser.add_argument("--relation", type=str, default=None)
-    parser.add_argument("--hook", type=str, default=None)
+    parser.add_argument(
+        "--hook",
+        type=str,
+        default=None,
+        choices=[
+            "ssm_after_ssm",
+            "mlp_after_silu",
+        ],
+    )
 
     args = parser.parse_args()
     logging_utils.configure(args)

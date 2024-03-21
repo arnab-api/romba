@@ -62,6 +62,7 @@ def main(
     use_cache: bool = False,
     layer: Optional[int] = None,
     rewrite_module_tmp: Optional[str] = None,
+    mamba_in_proj_channel: Optional[str] = None,
 ):
     # Set algorithm-specific variables
     params_class, apply_algo = ALG_DICT[alg_name]
@@ -82,22 +83,42 @@ def main(
             assert (
                 layer == hparams.layers[0]
             ), f"Layer mismatch: specified layer {layer} is different from the previous run {hparams.layers[0]}"
-        logger.warn(f"Overriding hparams layer to {layer}")
+        logger.warning(f"Overriding hparams layer to {layer}")
         hparams.layers = [layer]
     if rewrite_module_tmp is not None:
         if continue_from_run is not None:
             assert (
                 rewrite_module_tmp == hparams.rewrite_module_tmp
             ), f"Rewrite module mismatch: specified rewrite module {rewrite_module_tmp} is different from the previous run {hparams.rewrite_module_tmp}"
-        logger.warn(f"Overriding hparams rewrite_module_tmp to {rewrite_module_tmp}")
+        logger.warning(f"Overriding hparams rewrite_module_tmp to {rewrite_module_tmp}")
         hparams.rewrite_module_tmp = rewrite_module_tmp
+    if mamba_in_proj_channel is not None:
+        assert hparams.rewrite_module_tmp.endswith(
+            ".in_proj"
+        ), f"mamba_in_proj_channel set to {mamba_in_proj_channel} is only applicable to in_proj modules"
+        if continue_from_run is not None:
+            assert (
+                mamba_in_proj_channel == hparams.mamba_in_proj_channel
+            ), f"mamba_in_proj_channel mismatch: specified mamba_in_proj_channel {mamba_in_proj_channel} is different from the previous run {hparams.mamba_in_proj_channel}"
+        if mamba_in_proj_channel == "ssm":
+            hparams.mamba_block_ssm = True
+            hparams.mamba_block_non_ssm = False
+        elif mamba_in_proj_channel == "non_ssm":
+            hparams.mamba_block_ssm = False
+            hparams.mamba_block_non_ssm = True
+        logger.warning(
+            f"setting {hparams.mamba_block_non_ssm=}, {hparams.mamba_block_ssm=}"
+        )
 
     if continue_from_run is None:
+        module_path = Path(hparams.rewrite_module_tmp.split(".")[-1])
+        if mamba_in_proj_channel is not None:
+            module_path = module_path / mamba_in_proj_channel
         DIR = (
             RESULTS_DIR
             / dir_name
             / model_name.split("/")[-1]
-            / hparams.rewrite_module_tmp.split(".")[-1]
+            / module_path
             / f"layer_{hparams.layers[0]}"
         )
         if DIR.exists():
@@ -288,7 +309,7 @@ if __name__ == "__main__":
             # "gpt2-xl",
             # "EleutherAI/gpt-j-6B",
         ],
-        default="state-spaces/mamba-2.8b-slimpj",
+        default="state-spaces/mamba-2.8b",
         help="Model to edit.",
         required=True,
     )
@@ -369,6 +390,13 @@ if __name__ == "__main__":
         default=None,
         help="the module to use for rewriting. if None, then will parse from the default hparams file",
     )
+    parser.add_argument(
+        "--mamba_in_proj_channel",
+        type=str,
+        default=None,
+        choices=["ssm", "non_ssm"],
+    )
+
     parser.set_defaults(skip_generation_tests=False, conserve_memory=False)
     args = parser.parse_args()
 
@@ -391,4 +419,5 @@ if __name__ == "__main__":
         use_cache=args.use_cache,
         layer=args.layer if args.layer != -1 else None,
         rewrite_module_tmp=args.rewrite_module_tmp,
+        mamba_in_proj_channel=args.mamba_in_proj_channel,
     )
