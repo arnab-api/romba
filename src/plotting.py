@@ -22,7 +22,9 @@ def get_color_map(kind):
 from src.functional import decode_tokens
 
 
-def plot_trace_heatmap(result, savepdf=None, title=None, xlabel=None, modelname=None):
+def plot_trace_heatmap(
+    result, savepdf=None, title=None, xlabel=None, modelname=None, scale_range=None
+):
     differences = result["scores"]
     low_score = result["low_score"]
     answer = result["answer"]
@@ -51,10 +53,15 @@ def plot_trace_heatmap(result, savepdf=None, title=None, xlabel=None, modelname=
     ):
         # fig, ax = plt.subplots(figsize=(3.5, 2), dpi=200)
         fig, ax = plt.subplots(figsize=(3.5, len(labels) * 0.08 + 1.8), dpi=200)
+        scale_kwargs = dict(
+            vmin=low_score if scale_range is None else scale_range[0],
+        )
+        if scale_range is not None:
+            scale_kwargs["vmax"] = scale_range[1]
         h = ax.pcolor(
             differences,
             cmap=get_color_map(kind),
-            vmin=low_score,
+            **scale_kwargs,
         )
         ax.invert_yaxis()
         ax.set_yticks([0.5 + i for i in range(len(differences))])
@@ -80,7 +87,7 @@ def plot_trace_heatmap(result, savepdf=None, title=None, xlabel=None, modelname=
             cb.ax.set_title(
                 f"p({str(answer).strip()})",
                 # y=-len(labels) * 0.011,
-                y=-0.13,
+                y=-0.15,
                 fontsize=10,
             )
         if savepdf:

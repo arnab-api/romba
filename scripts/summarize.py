@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 def main(
     dir_name,
-    runs: Optional[List],
+    runs: Optional[List] = None,
     first_n_cases=None,
     get_uncompressed=False,
     abs_path=False,
