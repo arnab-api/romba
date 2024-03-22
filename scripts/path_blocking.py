@@ -356,7 +356,8 @@ class AblationResult(DataClassJsonMixin):
     prompt_template: str
     patch_recovery: list[float]
     ssm_severed: list[float]
-    mlp_severed: list[float]
+    gate_severed: list[float]
+    block_severed: list[float]
 
 
 @dataclass
@@ -376,7 +377,6 @@ def run_ablation_experiment(
         "person_plays_pro_sport",
         "company_ceo",
         "company_hq",
-        "person_native_language",
         "landmark_in_country",
         "product_by_company",
     ],
@@ -441,10 +441,16 @@ def run_ablation_experiment(
                     **common_kwargs,
                 )
 
-                indirect_effect_mlp_severed = calculate_hidden_flow_with_ablation(
+                indirect_effect_gate_severed = calculate_hidden_flow_with_ablation(
                     subject=sample.subject,
                     alt_subject=alt_sample.subject,
                     ablate_mambahook="mlp_after_silu",
+                    **common_kwargs,
+                )
+                indirect_effect_block_severed = calculate_hidden_flow_with_ablation(
+                    subject=sample.subject,
+                    alt_subject=alt_sample.subject,
+                    ablate_mambahook="after_down_proj",
                     **common_kwargs,
                 )
 
@@ -457,8 +463,11 @@ def run_ablation_experiment(
                 ssm_severed_recovery = (
                     indirect_effect_ssm_severed["scores"] - low_score
                 ) / (high_score - low_score)
-                mlp_severed_recovery = (
-                    indirect_effect_mlp_severed["scores"] - low_score
+                gate_severed_recovery = (
+                    indirect_effect_gate_severed["scores"] - low_score
+                ) / (high_score - low_score)
+                block_severed_recovery = (
+                    indirect_effect_block_severed["scores"] - low_score
                 ) / (high_score - low_score)
 
                 ablation_results.trials.append(
@@ -468,7 +477,8 @@ def run_ablation_experiment(
                         prompt_template=prompt_template,
                         patch_recovery=patch_recovery.tolist(),
                         ssm_severed=ssm_severed_recovery.tolist(),
-                        mlp_severed=mlp_severed_recovery.tolist(),
+                        gate_severed=gate_severed_recovery.tolist(),
+                        block_severed=block_severed_recovery.tolist(),
                     )
                 )
 

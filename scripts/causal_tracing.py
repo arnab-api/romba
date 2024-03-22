@@ -25,7 +25,6 @@ def causal_trace_relations(
         "person_plays_pro_sport",
         "company_ceo",
         "company_hq",
-        "person_native_language",
         "landmark_in_country",
         "product_by_company",
     ],
@@ -82,10 +81,7 @@ if __name__ == "__main__":
         "--hook",
         type=str,
         default=None,
-        choices=[
-            "ssm_after_ssm",
-            "mlp_after_silu",
-        ],
+        choices=["ssm_after_ssm", "mlp_after_silu", "after_down_proj"],
     )
 
     args = parser.parse_args()
