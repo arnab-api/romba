@@ -31,14 +31,25 @@ def causal_trace_relations(
     hook: Optional[str] = None,
     kind: Optional[str] = None,
 ):
+    assert (
+        hook is None or kind is None
+    ), "Please provide a hook for Mamba. And a kind for Transformer"
     if hook is not None:
         assert "mamba" in model_path.lower()
     if kind is not None:
         assert "mamba" not in model_path.lower()
     mt = ModelandTokenizer(model_path=model_path)
     relation_dir = os.path.join(DATA_DIR, "relation", "factual")
-    hook_name = hook if hook is not None else "residual"
-    results_dir = os.path.join(RESULTS_DIR, "causal_tracing_aie", hook_name)
+
+    module_name = hook or kind
+    module_name = module_name if module_name is not None else "residual"
+    results_dir = os.path.join(
+        RESULTS_DIR,
+        "causal_tracing_aie",
+        model_path.lower().split("/")[-1],
+        module_name,
+    )
+
     os.makedirs(results_dir, exist_ok=True)
     logger.info(f"Results will be saved to {results_dir}")
     for relation_name in relation_names:
