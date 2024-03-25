@@ -16,6 +16,8 @@ def get_color_map(kind):
         return "Reds"
     if "ssm" in kind.lower():
         return "Reds"
+    if "down_proj" in kind.lower():
+        return "Blues"
     return "Greys"
 
 

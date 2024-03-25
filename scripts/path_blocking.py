@@ -494,7 +494,7 @@ if __name__ == "__main__":
         type=str,
         choices=[
             "state-spaces/mamba-2.8b",
-            "EleutherAI/pythia-2.8b-deduped",
+            # "EleutherAI/pythia-2.8b-deduped", # ! doesn't support yet. As a quick fix, just copy the original implementation from ROME repo
         ],
     )
     parser.add_argument("--n_trial", type=int, default=None)

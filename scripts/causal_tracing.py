@@ -29,7 +29,12 @@ def causal_trace_relations(
         "product_by_company",
     ],
     hook: Optional[str] = None,
+    kind: Optional[str] = None,
 ):
+    if hook is not None:
+        assert "mamba" in model_path.lower()
+    if kind is not None:
+        assert "mamba" not in model_path.lower()
     mt = ModelandTokenizer(model_path=model_path)
     relation_dir = os.path.join(DATA_DIR, "relation", "factual")
     hook_name = hook if hook is not None else "residual"
@@ -59,6 +64,7 @@ def causal_trace_relations(
             save_path=relation_save_path,
             verbose=True,
             mamba_block_hook=hook,
+            kind=kind,
         )
         logger.info("Saved results to => " + relation_save_path)
         logger.info("-" * 50)
@@ -83,6 +89,12 @@ if __name__ == "__main__":
         default=None,
         choices=["ssm_after_ssm", "mlp_after_silu", "after_down_proj"],
     )
+    parser.add_argument(
+        "--kind",
+        type=str,
+        default=None,
+        choices=["mlp", "attn"],
+    )
 
     args = parser.parse_args()
     logging_utils.configure(args)
@@ -93,6 +105,7 @@ if __name__ == "__main__":
         model_path=args.model,
         trials_per_relation=args.n_trial,
         hook=args.hook,
+        kind=args.kind,
     )
     if args.relation is not None:
         kwargs["relation_names"] = [args.relation]

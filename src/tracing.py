@@ -610,7 +610,7 @@ def calculate_average_indirect_effects(
     return average_indirect_effects(indirect_effect_collection)
 
 
-def average_indirect_effects(indirect_effect_collection):
+def average_indirect_effects(indirect_effect_collection, relative_recovery=False):
     aie = {
         "input_tokens": [
             "prefix",
@@ -633,6 +633,8 @@ def average_indirect_effects(indirect_effect_collection):
     for subject in indirect_effect_collection:
         result = indirect_effect_collection[subject]
         differences = torch.tensor(result["scores"])
+        if relative_recovery:
+            differences = differences / (result["high_score"] - result["low_score"])
         prefixes.append(differences[: result["subject_range"][0]].mean(dim=0))
         low_scores.append(result["low_score"])
         subject_last.append(differences[result["subject_range"][1] - 1])
