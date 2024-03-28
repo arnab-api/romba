@@ -53,6 +53,7 @@ def MambaBlockForwardPatcher(
         (x, res) = x_and_res.split(
             split_size=[self.args.d_inner, self.args.d_inner], dim=-1
         )
+        x = x.clone()
         # ------------------------------------------------------
         if patch_hook == "ssm_after_up_proj":
             for patch_idx, patch_vector in patch_spec.items():
