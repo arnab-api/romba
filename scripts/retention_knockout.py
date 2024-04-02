@@ -38,6 +38,7 @@ from src.utils import logging_utils
 logger = logging.getLogger(__name__)
 
 
+@torch.inference_mode()
 def load_mean_activations(
     mt: ModelandTokenizer,
     num_docs=128,
@@ -82,6 +83,7 @@ def load_mean_activations(
         layer: {hook: None for hook in hooks} for layer in mt.layer_names
     }
 
+    counter = 0
     for text in tqdm(random_text):
         inputs = mt.tokenizer(
             text,
@@ -106,30 +108,28 @@ def load_mean_activations(
 
         for layer in mt.layer_names:
             for hook in hooks:
-                activations = current_states[layer][hook]
+                activations = current_states[layer][hook].detach()
                 # print(activations.shape)
                 if avg_activations[layer][hook] is None:
-                    avg_activations[layer][hook] = activations
+                    avg_activations[layer][hook] = activations.mean(dim=1)
                 else:
-                    avg_activations[layer][hook] = torch.cat(
-                        (avg_activations[layer][hook], activations), dim=1
-                    )
-
+                    avg_activations[layer][hook] += activations.mean(dim=1)
+        counter += 1
         functional.free_gpu_cache()
 
     for layer in avg_activations:
         for hook in avg_activations[layer]:
-            avg_activations[layer][hook] = avg_activations[layer][hook].mean(dim=1)
+            avg_activations[layer][hook] /= counter
 
     for hook in hooks:
-        logger.info(hook, avg_activations["layers.4"][hook].shape)
+        logger.info(f"{hook} => {avg_activations['layers.4'][hook].shape}")
 
     avg_detensorized = {}
     for layer in avg_activations:
         avg_detensorized[layer] = detensorize_indirect_effects(avg_activations[layer])
 
     with open(os.path.join(ACT_DIR, FILE_NAME), "w") as f:
-        json.dump(avg_activations, f)
+        json.dump(avg_detensorized, f)
         logger.info(f"Mean activations saved to {os.path.join(ACT_DIR, FILE_NAME)}")
 
     return avg_activations

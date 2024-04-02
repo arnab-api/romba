@@ -25,11 +25,22 @@ from src.functional import decode_tokens
 
 
 def plot_trace_heatmap(
-    result, savepdf=None, title=None, xlabel=None, modelname=None, scale_range=None
+    result,
+    savepdf=None,
+    title=None,
+    xlabel=None,
+    modelname=None,
+    scale_range=None,
+    relative_recovery=False,
 ):
     differences = result["scores"]
-    low_score = result["low_score"]
+    low_score = result["low_score"].to(differences.device)
     answer = result["answer"]
+
+    if relative_recovery:
+        high_score = result["high_score"].to(differences.device)
+        differences = (differences - low_score) / (high_score - low_score)
+
     kind = (
         None
         if (not result["kind"] or result["kind"] == "None")
@@ -86,18 +97,18 @@ def plot_trace_heatmap(
             ax.set_xlabel(xlabel)
         elif answer is not None:
             # The following should be cb.ax.set_xlabel, but this is broken in matplotlib 3.5.1.
+            scale_label = f"p({str(answer).strip()})" if not relative_recovery else "IE"
             cb.ax.set_title(
-                f"p({str(answer).strip()})",
-                # y=-len(labels) * 0.011,
+                scale_label,
                 y=-0.15,
                 fontsize=10,
             )
         if savepdf:
             os.makedirs(os.path.dirname(savepdf), exist_ok=True)
-            plt.savefig(savepdf, bbox_inches="tight")
-            plt.close()
-        else:
-            plt.show()
+            plt.savefig(savepdf, bbox_inches="tight", dpi=300)
+            # plt.close()
+        # else:
+        plt.show()
 
 
 from typing import Literal
